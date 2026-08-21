@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: maf-poc
+services:
+    maf-poc-agent:
+        project: .
+        host: azure.ai.agent
+        language: python
+        uses:
+            - maf-poc-project
+        env:
+            FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT}
+            AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+            APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING}
+            OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: "false"
+            HISTORY_PROVIDER: cosmos
+            RAG_PROVIDER: azure_search
+            LOG_LEVEL: INFO
+            AZURE_COSMOS_ENDPOINT: ${AZURE_COSMOS_ENDPOINT}
+            AZURE_COSMOS_DATABASE_NAME: ${AZURE_COSMOS_DATABASE_NAME}
+            AZURE_COSMOS_CONTAINER_NAME: ${AZURE_COSMOS_CONTAINER_NAME}
+            COSMOS_LOAD_MESSAGES: "false"
+            COSMOS_STARTUP_CHECK: ${DEPENDENCY_STARTUP_CHECKS}
+            AZURE_SEARCH_ENDPOINT: ${AZURE_SEARCH_ENDPOINT}
+            AZURE_SEARCH_INDEX_NAME: ${AZURE_SEARCH_INDEX_NAME}
+            RAG_AUTO_INDEX: ${DEPENDENCY_STARTUP_CHECKS}
+            RAG_DOCUMENTS_PATH: data/knowledge
+            RAG_TOP_K: "3"
+        codeConfiguration:
+            dependencyResolution: remote_build
+            entryPoint: hosted_agent.py
+            runtime: python_3_13
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        kind: hosted
+        name: maf-poc-agent
+        protocols:
+            - protocol: responses
+              version: 2.0.0
+    maf-poc-project:
+        host: azure.ai.project
+        endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+infra:
+    provider: bicep
+    path: infra

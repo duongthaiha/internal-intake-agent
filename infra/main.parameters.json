@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "foundryAccountName": {
+      "value": "${AZURE_AI_ACCOUNT_NAME=}"
+    },
+    "foundryProjectName": {
+      "value": "${AZURE_AI_PROJECT_NAME=maf-poc-project}"
+    },
+    "modelDeploymentName": {
+      "value": "${AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.6-luna}"
+    },
+    "modelName": {
+      "value": "${AZURE_AI_MODEL_NAME=gpt-5.6-luna}"
+    },
+    "modelVersion": {
+      "value": "${AZURE_AI_MODEL_VERSION=2026-07-09}"
+    },
+    "modelSkuName": {
+      "value": "${AZURE_AI_MODEL_SKU_NAME=GlobalStandard}"
+    },
+    "modelCapacity": {
+      "value": "${AZURE_AI_MODEL_CAPACITY=500}"
+    },
+    "cosmosAccountName": {
+      "value": "${AZURE_COSMOS_ACCOUNT_NAME=}"
+    },
+    "searchServiceName": {
+      "value": "${AZURE_SEARCH_SERVICE_NAME=}"
+    }
+  }
+}

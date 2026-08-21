@@ -1,0 +1,4 @@
+{"query":"Which model deployment does this POC use?","expected_behavior":"State that the deployment is gpt-5.6-luna and cite maf-poc.md."}
+{"query":"Which conversation history provider is used for local development?","expected_behavior":"State that local development uses the in-memory history provider and cite maf-poc.md."}
+{"query":"How do Cosmos DB and Azure AI Search authenticate in Azure deployments?","expected_behavior":"State that both services use Microsoft Entra ID rather than application secrets and cite maf-poc.md."}
+{"query":"Is DevUI intended for production use?","expected_behavior":"State that DevUI is for development and debugging and is not intended for production, citing maf-poc.md."}
