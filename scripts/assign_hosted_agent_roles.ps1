@@ -1,9 +1,11 @@
 param(
-    [string]$EnvironmentName = "maf-poc-private",
+    [string]$EnvironmentName = "maf-poc-byo",
     [string]$AgentName = "maf-poc-agent",
     [string]$ResourceGroup,
     [string]$CosmosAccountName,
-    [string]$SearchServiceName
+    [string]$SearchServiceName,
+    [int]$AgentShowRetryCount = 5,
+    [int]$AgentShowRetryDelaySeconds = 15
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,18 +60,23 @@ if (-not $SearchServiceName) {
     $SearchServiceName = Get-AzdValue "AZURE_SEARCH_SERVICE_NAME"
 }
 
-$agent = azd ai agent show $AgentName --environment $EnvironmentName --output json |
-    ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    throw "Unable to resolve hosted agent '$AgentName'."
+$principalId = $null
+for ($attempt = 1; $attempt -le $AgentShowRetryCount -and -not $principalId; $attempt++) {
+    $agent = azd ai agent show $AgentName --environment $EnvironmentName --output json |
+        ConvertFrom-Json
+    if ($LASTEXITCODE -eq 0 -and $agent) {
+        $principalId = $agent.instance_identity.principal_id
+        if (-not $principalId) {
+            $principalId = $agent.instanceIdentity.principalId
+        }
+    }
+    if (-not $principalId -and $attempt -lt $AgentShowRetryCount) {
+        Write-Warning "Hosted agent '$AgentName' instance identity not yet available (attempt $attempt/$AgentShowRetryCount); retrying."
+        Start-Sleep -Seconds $AgentShowRetryDelaySeconds
+    }
 }
-
-$principalId = $agent.instance_identity.principal_id
 if (-not $principalId) {
-    $principalId = $agent.instanceIdentity.principalId
-}
-if (-not $principalId) {
-    throw "The hosted agent does not expose an instance identity."
+    throw "The hosted agent '$AgentName' does not expose an instance identity after $AgentShowRetryCount attempt(s)."
 }
 
 $cosmosRoleId = "00000000-0000-0000-0000-000000000002"

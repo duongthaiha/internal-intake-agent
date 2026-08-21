@@ -247,7 +247,7 @@ def main() -> None:
     parser.add_argument("--dataset-name", default="maf-poc-smoke")
     parser.add_argument("--dataset-version", default="1")
     parser.add_argument("--evaluation-name", default="maf-poc-agent-smoke")
-    parser.add_argument("--run-name", default="maf-poc-private-smoke-v2")
+    parser.add_argument("--run-name", default="maf-poc-byo-smoke-v1")
     parser.add_argument("--results-root", type=Path, default=DEFAULT_RESULTS_ROOT)
     parser.add_argument(
         "--poll-seconds",

@@ -22,8 +22,9 @@
 	and Azure AI Search indexing respectively. Keep provider-specific behavior within
 	these boundaries.
 - `azure.yaml` defines the hosted Agent Framework service and its runtime settings.
-- `infra/` contains the Bicep deployment. Keep reusable resource groups in
-	`infra/modules/` and keep `infra/main.bicep` focused on composition and outputs.
+- `infra/` contains the Bicep deployment. Official Foundry modules are vendored
+  under `infra/modules-network-secured/`; workload additions belong in
+  `infra/modules-local/`. Keep `infra/main.bicep` focused on composition and outputs.
 - `scripts/` contains deployment, role-assignment, indexing, validation, and
 	evaluation workflows. Extend an existing workflow before introducing a parallel
 	path.
@@ -62,7 +63,7 @@
 - Any IaC change that adds a database, storage account, search service, or similar
 	data service must configure private networking in the same change. Include public
 	network access disabled, local/key authentication disabled where supported, a
-	private endpoint or Foundry managed-network private endpoint outbound rule for each
+	a private endpoint for each
 	required subresource, private DNS integration, and workload network connectivity.
 - Ensure private DNS zones are linked to every VNet that must resolve the service,
 	and ensure subnet policies, delegations, and routing are compatible with private
@@ -90,15 +91,15 @@
 - Database such as SQL, Cosmos DB and Azure AI Search must keep public network access disabled. Any new
 	database, search, or storage dependency must support private connectivity and
 	private DNS from the workload before public access is disabled.
-- Preserve the Foundry managed-network private endpoint outbound rules for Cosmos DB
-	and Azure AI Search. Do not weaken network ACLs or temporarily enable public access
-	in Bicep. Use the existing controlled deployment/cleanup scripts when temporary
-	access is explicitly required for an operational workflow.
+- Preserve BYO-VNet injection and the private endpoints for Cosmos DB, Storage,
+  Azure AI Search, ACR, Foundry, and Azure Monitor. Foundry public inbound access
+  must remain deny-by-default with exactly one configured narrow client CIDR; never
+  broaden it to an unrestricted public endpoint.
 - Preserve minimum TLS settings, disabled local authentication, and the Cosmos DB
 	`/session_id` partition-key contract.
 - Treat Foundry inbound access separately from private outbound access to data
 	services. Do not change the Foundry account's network mode without validating
-	hosted-agent control-plane, deployment, invocation, and managed-network behavior.
+	hosted-agent control-plane, deployment, invocation, and BYO-VNet behavior.
 
 ## Infrastructure as code
 
@@ -112,7 +113,7 @@
 	capacity. Derive deterministic defaults with `uniqueString` where appropriate.
 - Return deployment values through Bicep outputs and `azd` environment variables.
 	Do not duplicate deployment state in source files.
-- Preserve dependency ordering for managed-network provisioning, private endpoint
+- Preserve dependency ordering for capability-host provisioning, private endpoint
 	approval, role assignment, agent publication, and smoke validation.
 - Before changing model name, version, SKU, capacity, or region, verify current
 	availability and quota. Do not assume a model is available in every region.
@@ -131,7 +132,7 @@
 	python -m compileall agent.py devui.py hosted_agent.py history.py rag.py search_index.py scripts
 	python -m scripts.evaluate_local
 	az bicep build --file infra/main.bicep
-	.\scripts\validate_private_deployment.ps1
+	.\scripts\validate_byo_deployment.ps1
 	python -m scripts.evaluate_foundry
 	```
 

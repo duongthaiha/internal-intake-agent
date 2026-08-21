@@ -1,7 +1,7 @@
 # Microsoft Agent Framework POC
 
 A Python agent built with Microsoft Agent Framework and a private Azure
-deployment of `gpt-5.6-luna`.
+deployment of `gpt-5.6-sol`.
 
 The agent uses the Agent Framework harness, which supplies the runtime
 scaffolding for function invocation, per-model-call history persistence,
@@ -20,7 +20,7 @@ Retrieval-augmented generation is configurable:
 - Azure CLI
 - Azure Developer CLI (`azd`)
 - Permission to create resources and role assignments in the target subscription
-- Available `gpt-5.6-luna` `GlobalStandard` quota in `uksouth`
+- Available `gpt-5.6-sol` `GlobalStandard` quota in `uksouth`
 
 The agent uses `DefaultAzureCredential` for Foundry and Cosmos DB, so no API
 keys are stored locally. The identity needs Cosmos DB data-plane permissions,
@@ -37,54 +37,86 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-## Private Azure deployment
+## BYO-VNet Azure deployment
 
-The supported deployment creates a separate stack in
+The supported deployment uses the official Microsoft Foundry Standard Agent
+network-secured template, adapted for this workload. It creates
+`rg-maf-poc-byo-uk` with:
+
+- A new Foundry account and project injected into a dedicated BYO VNet
+- A delegated `/24` agent subnet and private-endpoint subnet
+- Private Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
+- Private endpoints and linked Private DNS zones
+- A `gpt-5.6-sol` model deployment
+- Optional Azure Bastion and private Windows Server administration VM
+
+The agent subnet permits public outbound traffic. Foundry inbound access uses
+two paths: a private endpoint inside the VNet and a public endpoint restricted
+to one narrow deployer CIDR rule. The current corporate egress pool uses
+`85.210.10.184/29`, which includes the supplied `85.210.10.186` address.
+Cosmos DB, Search, Storage, and ACR remain private.
+
+The current `maf-poc-byo` environment sets `AZURE_DEPLOY_ADMIN_ACCESS=false`
+because this subscription has no deployable VM SKU in UK South. This does not
+affect Foundry BYO network injection or hosted-agent operation.
+
+Run preflight without provisioning or deleting resources:
+
+```powershell
+.\scripts\deploy_byo.ps1 -PreflightOnly -AllowedClientIp "<your-public-ipv4>"
+```
+
+The script can query an approved Microsoft or enterprise IP-echo endpoint passed
+with `-IpDetectionEndpoint` or `PUBLIC_IP_ECHO_ENDPOINT`. If detection is not
+configured, unavailable, or ambiguous, it stops and requires
+`-AllowedClientIp`; it never creates an allow-all rule.
+
+UK South currently requires capacity to be released from the former deployment.
+The destructive switch is guarded so it can delete only
 `rg-maf-poc-private-uk`:
 
-- A new Foundry account and project with managed-network injection configured
-  when the account is created
-- A `gpt-5.6-luna` model deployment
-- A serverless Cosmos DB account, database, and container
-- A Basic Azure AI Search service
-- Foundry managed-network private endpoint outbound rules for Cosmos DB
-  (`Sql`) and Search (`searchService`)
-
-Cosmos DB and Search have public network access and local/key authentication
-disabled. The hosted agent reaches them through the Foundry managed network
-using managed identity.
-
 ```powershell
-.\scripts\deploy_private.ps1
+.\scripts\deploy_byo.ps1 `
+  -AllowedClientIp "<your-public-ipv4>" `
+  -DeleteOldResourceGroup
 ```
 
-The script validates Azure CLI and `azd` authentication, checks regional model
-quota before changing Azure, creates or selects the `maf-poc-private` azd
-environment, provisions the infrastructure, waits for managed private
-endpoints, deploys the agent, assigns its data-plane roles, and runs a grounded
-remote smoke test. It is safe to rerun.
+The workflow builds and previews the Bicep, removes the old stack, waits for
+model quota, provisions the BYO-VNet stack, publishes the hosted agent, assigns
+its Cosmos DB and Search roles, republishes with dependency checks enabled, and
+runs a grounded invocation. The new Cosmos history container starts empty; the
+hosted agent rebuilds the Search index from `data/knowledge`.
 
-The requested model capacity defaults to 500 and is reduced to the remaining
-quota when some capacity is available:
+The one-time administration VM password is generated when omitted and stored in
+the local azd environment without being printed. Supply a secure value instead:
 
 ```powershell
-.\scripts\deploy_private.ps1 -ModelCapacity 100
+$password = Read-Host "Admin VM recovery password" -AsSecureString
+.\scripts\deploy_byo.ps1 `
+  -AllowedClientIp "<your-public-ipv4>" `
+  -AdminVmPassword $password `
+  -DeleteOldResourceGroup
 ```
 
-If no capacity remains, the script stops before provisioning. Request quota or
-free existing `gpt-5.6-luna` `GlobalStandard` capacity, then rerun it.
-
-Run the non-destructive checks separately:
+Run control-plane and public-path validation separately:
 
 ```powershell
-.\scripts\validate_private_deployment.ps1
+.\scripts\validate_byo_deployment.ps1 -EnvironmentName maf-poc-byo
+```
+
+From the administration VM reached through Azure Bastion, clone this repository,
+install Azure CLI and `azd`, authenticate, then verify private DNS and endpoint
+connectivity:
+
+```powershell
+.\scripts\validate_from_vnet.ps1 -EnvironmentName maf-poc-byo
 ```
 
 Inspect the environment variables captured by the currently published hosted
 agent version:
 
 ```powershell
-$agent = azd ai agent show maf-poc-agent --environment maf-poc-private --output json | ConvertFrom-Json
+$agent = azd ai agent show maf-poc-agent --environment maf-poc-byo --output json | ConvertFrom-Json
 $agent.version
 $agent.definition.environment_variables | Format-List
 ```
@@ -99,7 +131,7 @@ The local `.env` can use:
 
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<foundry-account>.services.ai.azure.com/api/projects/maf-poc-project
-FOUNDRY_MODEL=gpt-5.6-luna
+FOUNDRY_MODEL=gpt-5.6-sol
 LOG_LEVEL=INFO
 HISTORY_PROVIDER=memory
 COSMOS_STARTUP_CHECK=false
@@ -333,7 +365,7 @@ python -m scripts.evaluate_local --repetitions 3
 Each JSONL row contains a query and local expectations:
 
 ```json
-{"query":"Which model deployment does this POC use?","expected_output":{"terms":[["gpt-5.6-luna"]],"source":"maf-poc.md"}}
+{"query":"Which model deployment does this POC use?","expected_output":{"terms":[["gpt-5.6-sol"]],"source":"maf-poc.md"}}
 ```
 
 Each inner `terms` list contains acceptable aliases; every term group must
@@ -396,26 +428,23 @@ the hosted identity can be created. It assigns RBAC, enables
 `DEPENDENCY_STARTUP_CHECKS`, and deploys again. A successful final startup
 therefore proves the managed agent can reach and use both private dependencies.
 
-Underlying commands remain available for troubleshooting and CI:
+Underlying commands remain available for troubleshooting and CI after the azd
+environment has been initialized by `deploy_byo.ps1`:
 
 ```powershell
-azd provision --environment maf-poc-private
-azd deploy --environment maf-poc-private
-.\scripts\assign_hosted_agent_roles.ps1 -EnvironmentName maf-poc-private
-.\scripts\validate_private_deployment.ps1 -EnvironmentName maf-poc-private
+azd provision --environment maf-poc-byo
+azd deploy --environment maf-poc-byo
+.\scripts\assign_hosted_agent_roles.ps1 -EnvironmentName maf-poc-byo
+.\scripts\validate_byo_deployment.ps1 -EnvironmentName maf-poc-byo
 ```
 
-`AllowInternetOutbound` is used for the Foundry managed network to avoid the
-managed Azure Firewall required by approved-only outbound mode. Cosmos DB and
-Search remain private-only through explicit managed private endpoint rules.
+Hosted agent deployment is complete only after the final version starts with
+dependency checks enabled and `validate_byo_deployment.ps1` confirms grounded
+Search output, Cosmos write/read/delete access, private endpoint approvals, DNS
+links, network injection, and the exact Foundry client IP rule.
 
-After private Search grounding and Cosmos startup checks pass, remove the
-temporary public agent, policy exemption, and Cosmos firewall allowance:
-
-```powershell
-.\scripts\cleanup_temporary_public.ps1
-.\scripts\cleanup_temporary_public.ps1 -Execute
-```
-
-The first command is a dry run. Cleanup is targeted and never deletes either
-resource group.
+To retire a failed BYO deployment safely, delete the project capability host
+before the account capability host or account, purge the deleted Foundry
+account, and wait for the agent subnet service association to clear before
+reusing that subnet. Prefer a new subnet or VNet for retries after capability
+host provisioning has started.
