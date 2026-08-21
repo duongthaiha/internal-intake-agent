@@ -32,6 +32,12 @@
     "cosmosAccountName": {
       "value": "${AZURE_COSMOS_ACCOUNT_NAME=}"
     },
+    "cosmosIntakeDatabaseName": {
+      "value": "${AZURE_COSMOS_INTAKE_DATABASE_NAME=intake-agent}"
+    },
+    "cosmosIntakeContainerName": {
+      "value": "${AZURE_COSMOS_INTAKE_CONTAINER_NAME=requests}"
+    },
     "searchServiceName": {
       "value": "${AZURE_SEARCH_SERVICE_NAME=}"
     }

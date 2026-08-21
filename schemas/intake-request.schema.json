@@ -13,6 +13,11 @@
     "requester"
   ],
   "properties": {
+    "id": {
+      "type": "string",
+      "description": "A system-generated identifier added before the request is persisted.",
+      "format": "uuid"
+    },
     "title": {
       "type": "string",
       "description": "A short, recognizable name for the request.",

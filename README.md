@@ -37,6 +37,14 @@ surface misspelled or unsupported fields.
 This repository currently provides the contract, example, and guidance only.
 The agent does not yet generate, persist, or validate intake records at runtime.
 
+The private Azure infrastructure provisions an `intake-agent` SQL database and
+`requests` container for future records governed by this schema. They use the
+existing private serverless Cosmos DB account but are separate from the
+`agent-framework/chat-history` database and container. Intake records are
+partitioned by the optional, system-generated `/id` field in the schema. The
+schema itself remains versioned in this repository; provisioning does not seed
+data or enable runtime persistence.
+
 ## Prerequisites
 
 - Python 3.11 or later
@@ -68,7 +76,8 @@ The supported deployment creates a separate stack in
 - A new Foundry account and project with managed-network injection configured
   when the account is created
 - A `gpt-5.6-luna` model deployment
-- A serverless Cosmos DB account, database, and container
+- A serverless Cosmos DB account with separate chat-history and intake databases
+  and containers
 - A Basic Azure AI Search service
 - Foundry managed-network private endpoint outbound rules for Cosmos DB
   (`Sql`) and Search (`searchService`)
@@ -133,11 +142,14 @@ RAG_TOP_K=3
 AZURE_COSMOS_ENDPOINT=https://<cosmos-account>.documents.azure.com:443/
 AZURE_COSMOS_DATABASE_NAME=agent-framework
 AZURE_COSMOS_CONTAINER_NAME=chat-history
+AZURE_COSMOS_INTAKE_DATABASE_NAME=intake-agent
+AZURE_COSMOS_INTAKE_CONTAINER_NAME=requests
 AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
 AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge
 ```
 
-The Cosmos container uses `/session_id` as its partition key.
+The chat-history container uses `/session_id` as its partition key. The intake
+request container uses `/id`.
 
 ## Conversation history
 

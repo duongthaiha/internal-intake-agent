@@ -20,6 +20,8 @@ function Get-AzdValue {
 $resourceGroup = Get-AzdValue "AZURE_RESOURCE_GROUP"
 $foundryAccount = Get-AzdValue "AZURE_AI_ACCOUNT_NAME"
 $cosmosAccount = Get-AzdValue "AZURE_COSMOS_ACCOUNT_NAME"
+$cosmosIntakeDatabase = Get-AzdValue "AZURE_COSMOS_INTAKE_DATABASE_NAME"
+$cosmosIntakeContainer = Get-AzdValue "AZURE_COSMOS_INTAKE_CONTAINER_NAME"
 $searchService = Get-AzdValue "AZURE_SEARCH_SERVICE_NAME"
 $modelDeployment = Get-AzdValue "AZURE_AI_MODEL_DEPLOYMENT_NAME"
 
@@ -32,6 +34,28 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ($cosmos.publicNetworkAccess -ne "Disabled" -or -not $cosmos.disableLocalAuth) {
     throw "Cosmos DB must have public access disabled and local authentication disabled."
+}
+
+$intakeDatabase = az cosmosdb sql database show `
+    --account-name $cosmosAccount `
+    --name $cosmosIntakeDatabase `
+    --resource-group $resourceGroup `
+    --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $intakeDatabase) {
+    throw "Unable to inspect Cosmos DB database '$cosmosIntakeDatabase'."
+}
+
+$intakeContainer = az cosmosdb sql container show `
+    --account-name $cosmosAccount `
+    --database-name $cosmosIntakeDatabase `
+    --name $cosmosIntakeContainer `
+    --resource-group $resourceGroup `
+    --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $intakeContainer) {
+    throw "Unable to inspect Cosmos DB container '$cosmosIntakeContainer'."
+}
+if ($intakeContainer.resource.partitionKey.paths -notcontains "/id") {
+    throw "Cosmos DB intake container must use '/id' as its partition key."
 }
 
 $search = az search service show `
@@ -102,5 +126,5 @@ if (
     throw "The hosted response was not grounded with '$modelDeployment' and '$ExpectedSource'."
 }
 
-Write-Output "Private deployment validation passed."
-Write-Output "Successful agent startup also verifies Search indexing and the Cosmos write/read/delete connectivity check."
+Write-Output "Private deployment validation passed, including the intake database and container."
+Write-Output "Successful agent startup also verifies Search indexing and the chat-history Cosmos connectivity check."

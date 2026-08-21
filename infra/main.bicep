@@ -37,6 +37,12 @@ param cosmosDatabaseName string = 'agent-framework'
 @description('Cosmos DB container name.')
 param cosmosContainerName string = 'chat-history'
 
+@description('Cosmos DB SQL database for intake request records.')
+param cosmosIntakeDatabaseName string = 'intake-agent'
+
+@description('Cosmos DB container for intake request records.')
+param cosmosIntakeContainerName string = 'requests'
+
 @description('Azure AI Search service name. Leave empty to generate a deterministic name.')
 param searchServiceName string = ''
 
@@ -56,6 +62,8 @@ module dataServices 'modules/data-services.bicep' = {
     cosmosAccountName: resolvedCosmosAccountName
     cosmosDatabaseName: cosmosDatabaseName
     cosmosContainerName: cosmosContainerName
+    cosmosIntakeDatabaseName: cosmosIntakeDatabaseName
+    cosmosIntakeContainerName: cosmosIntakeContainerName
     searchServiceName: resolvedSearchServiceName
   }
 }
@@ -86,6 +94,8 @@ output AZURE_COSMOS_ACCOUNT_NAME string = dataServices.outputs.cosmosAccountName
 output AZURE_COSMOS_ENDPOINT string = dataServices.outputs.cosmosEndpoint
 output AZURE_COSMOS_DATABASE_NAME string = dataServices.outputs.cosmosDatabaseName
 output AZURE_COSMOS_CONTAINER_NAME string = dataServices.outputs.cosmosContainerName
+output AZURE_COSMOS_INTAKE_DATABASE_NAME string = dataServices.outputs.cosmosIntakeDatabaseName
+output AZURE_COSMOS_INTAKE_CONTAINER_NAME string = dataServices.outputs.cosmosIntakeContainerName
 output AZURE_SEARCH_SERVICE_NAME string = dataServices.outputs.searchServiceName
 output AZURE_SEARCH_ENDPOINT string = dataServices.outputs.searchEndpoint
 output AZURE_SEARCH_INDEX_NAME string = searchIndexName

@@ -7,6 +7,8 @@ param principalId string
 param cosmosAccountName string
 param cosmosDatabaseName string
 param cosmosContainerName string
+param cosmosIntakeDatabaseName string
+param cosmosIntakeContainerName string
 param searchServiceName string
 
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
@@ -62,6 +64,33 @@ resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/container
         kind: 'Hash'
         paths: [
           '/session_id'
+        ]
+        version: 2
+      }
+    }
+  }
+}
+
+resource intakeDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-11-15' = {
+  parent: cosmosAccount
+  name: cosmosIntakeDatabaseName
+  properties: {
+    resource: {
+      id: cosmosIntakeDatabaseName
+    }
+  }
+}
+
+resource intakeContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-11-15' = {
+  parent: intakeDatabase
+  name: cosmosIntakeContainerName
+  properties: {
+    resource: {
+      id: cosmosIntakeContainerName
+      partitionKey: {
+        kind: 'Hash'
+        paths: [
+          '/id'
         ]
         version: 2
       }
@@ -150,6 +179,8 @@ output cosmosAccountResourceId string = cosmosAccount.id
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output cosmosDatabaseName string = database.name
 output cosmosContainerName string = container.name
+output cosmosIntakeDatabaseName string = intakeDatabase.name
+output cosmosIntakeContainerName string = intakeContainer.name
 output searchServiceName string = searchService.name
 output searchServiceResourceId string = searchService.id
 output searchEndpoint string = 'https://${searchService.name}.search.windows.net'
