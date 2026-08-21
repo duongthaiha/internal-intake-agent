@@ -7,7 +7,7 @@
     "name": "Alex Taylor",
     "email": "alex.taylor@example.com",
     "team": "Research and Innovation Office",
-    "organisation": "Northbridge University"
+    "organisation": "Contoso University"
   },
   "businessContext": {
     "businessArea": "Research and Innovation",
@@ -158,19 +158,19 @@
       "name": "Jordan Lee",
       "email": "jordan.lee@example.com",
       "team": "Research and Innovation Office",
-      "organisation": "Northbridge University"
+      "organisation": "Contoso University"
     },
     "technicalOwner": {
       "name": "Morgan Chen",
       "email": "morgan.chen@example.com",
       "team": "Digital Services",
-      "organisation": "Northbridge University"
+      "organisation": "Contoso University"
     }
   },
   "supportingLinks": [
     {
       "label": "Fictional current-process overview",
-      "url": "https://example.edu/innovation-intake-process"
+      "url": "https://contoso.edu/innovation-intake-process"
     }
   ],
   "additionalNotes": "Start with a small reviewer group and use pilot feedback to refine optional questions."
