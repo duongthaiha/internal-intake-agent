@@ -1,0 +1,177 @@
+{
+  "title": "AI-assisted university innovation request triage",
+  "problemOpportunity": "Ideas from academic schools and professional services arrive through several channels and often lack the detail the university innovation panel needs, creating repeated follow-up and inconsistent prioritisation.",
+  "proposedIdea": "Provide an intake assistant that guides university staff and postgraduate researchers through a structured conversation, captures a complete submission, and highlights missing evidence for reviewers.",
+  "expectedOutcome": "Reduce clarification cycles while giving the university innovation panel consistent information for discovery, ethical review, and prioritisation decisions.",
+  "requester": {
+    "name": "Alex Taylor",
+    "email": "alex.taylor@example.com",
+    "team": "Research and Innovation Office",
+    "organisation": "Northbridge University"
+  },
+  "businessContext": {
+    "businessArea": "Research and Innovation",
+    "strategicAlignment": "Improve how ideas from teaching, research, and university operations progress into responsible experiments.",
+    "currentProcess": "University staff and researchers complete a free-text form, and panel reviewers manually request missing details by email.",
+    "evidenceOfNeed": "The innovation panel reports that most submissions require at least one clarification round before assessment.",
+    "desiredTimeline": "Run a limited pilot during the next academic term."
+  },
+  "targetUsers": {
+    "primaryUsers": [
+      "University staff and postgraduate researchers submitting ideas",
+      "University innovation panel reviewers"
+    ],
+    "estimatedUserCount": 2500,
+    "userNeeds": "Requesters need clear guidance; reviewers need concise, comparable submissions.",
+    "accessibilityNeeds": "The conversational flow and generated summary must support keyboard and screen-reader use."
+  },
+  "valueAndSuccess": {
+    "expectedBenefits": [
+      "Fewer clarification cycles",
+      "Faster initial review",
+      "More consistent intake data"
+    ],
+    "successMeasures": [
+      {
+        "measure": "Submissions requiring reviewer clarification",
+        "baseline": "Approximately 70 percent",
+        "target": "Below 30 percent",
+        "timeframe": "Within three months of the pilot"
+      },
+      {
+        "measure": "Median time from submission to initial decision",
+        "baseline": "Five working days",
+        "target": "Two working days",
+        "timeframe": "Within three months of the pilot"
+      }
+    ],
+    "costOfDoingNothing": "Reviewers continue spending time collecting basic information instead of assessing and supporting promising ideas.",
+    "assumptions": [
+      "Requesters can review and correct the structured summary before submission."
+    ]
+  },
+  "aiConsiderations": {
+    "whyAI": "A language model can ask context-aware follow-up questions and transform conversational answers into the agreed intake structure.",
+    "tasksForAI": [
+      "Identify missing compulsory information",
+      "Ask relevant follow-up questions",
+      "Draft a structured intake summary"
+    ],
+    "inputs": [
+      "Requester conversation",
+      "Intake field guidance"
+    ],
+    "outputs": [
+      "Structured intake record",
+      "Missing-information prompts"
+    ],
+    "humanRole": "The requester confirms the record before submission, and reviewers make every prioritisation decision.",
+    "acceptableFailure": "The assistant may ask an unnecessary clarification question, but it must not invent request details or submit without confirmation.",
+    "nonAIAlternative": "Replace the free-text form with a longer conditional web form."
+  },
+  "dataConsiderations": {
+    "sources": [
+      {
+        "name": "Requester responses",
+        "description": "Information entered during the intake conversation.",
+        "owner": "Research and Innovation Office",
+        "classification": "Internal",
+        "accessStatus": "Available for a pilot"
+      }
+    ],
+    "containsPersonalData": true,
+    "containsSensitiveData": false,
+    "dataQuality": "Free-text quality varies; the requester must confirm the generated record.",
+    "dataResidency": "Use the university's approved regional services.",
+    "retentionRequirements": "Align with the university records retention schedule for innovation proposals."
+  },
+  "dependencies": [
+    {
+      "name": "University innovation portal",
+      "description": "Receives the approved structured record.",
+      "owner": "Research and Innovation Office"
+    },
+    {
+      "name": "Identity and access management",
+      "description": "Provides authenticated access for university staff and postgraduate researchers.",
+      "owner": "Digital Services"
+    }
+  ],
+  "deliveryConsiderations": {
+    "workCompleted": "A small set of historical requests has been reviewed to identify common missing information.",
+    "constraints": [
+      "Pilot data must remain in approved enterprise services",
+      "Existing review decisions must remain human-owned"
+    ],
+    "requiredSkills": [
+      "Conversation design",
+      "Responsible AI review",
+      "Service integration"
+    ],
+    "budgetContext": "Discovery funding is available; production funding depends on pilot evidence.",
+    "targetMilestone": "Pilot readiness review before the next academic term"
+  },
+  "risks": [
+    {
+      "category": "Adoption",
+      "description": "A long conversation could discourage requesters.",
+      "impact": "Users may return to unstructured channels.",
+      "mitigation": "Keep only core fields compulsory and show progress throughout intake."
+    },
+    {
+      "category": "Accuracy",
+      "description": "The generated summary could misrepresent a requester's intent.",
+      "impact": "Reviewers could assess incorrect information.",
+      "mitigation": "Require requester review and confirmation before submission."
+    }
+  ],
+  "responsibleAI": {
+    "affectedStakeholders": "Requesters and reviewers are directly affected; teams named in proposals may be indirectly affected.",
+    "fairnessConsiderations": "Guidance should not favour proposals based on writing style, role, or organisational seniority.",
+    "transparencyNeeds": "Users must know that AI drafts the record and that a human makes prioritisation decisions.",
+    "humanOversight": "Requesters approve submissions and reviewers retain decision authority.",
+    "potentialHarms": [
+      "Important context could be omitted or distorted",
+      "Overconfident wording could make an early idea appear validated"
+    ],
+    "harmMitigations": [
+      "Show the source answer for each generated section",
+      "Separate stated evidence from assumptions"
+    ]
+  },
+  "securityAndPrivacy": {
+    "securityRequirements": [
+      "Authenticate every requester",
+      "Restrict records to authorised reviewers"
+    ],
+    "privacyRequirements": [
+      "Collect only contact details needed for follow-up",
+      "Show a privacy notice before collection"
+    ],
+    "regulatoryRequirements": [
+      "Complete the university's privacy, research ethics, and responsible-AI reviews before pilot launch"
+    ],
+    "reviewNotes": "Detailed review is still required because proposals may include personal data, unpublished research, or commercially sensitive information."
+  },
+  "ownership": {
+    "businessOwner": {
+      "name": "Jordan Lee",
+      "email": "jordan.lee@example.com",
+      "team": "Research and Innovation Office",
+      "organisation": "Northbridge University"
+    },
+    "technicalOwner": {
+      "name": "Morgan Chen",
+      "email": "morgan.chen@example.com",
+      "team": "Digital Services",
+      "organisation": "Northbridge University"
+    }
+  },
+  "supportingLinks": [
+    {
+      "label": "Fictional current-process overview",
+      "url": "https://example.edu/innovation-intake-process"
+    }
+  ],
+  "additionalNotes": "Start with a small reviewer group and use pilot feedback to refine optional questions."
+}

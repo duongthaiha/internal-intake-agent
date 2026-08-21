@@ -14,6 +14,30 @@ Retrieval-augmented generation is configurable:
 - `RAG_PROVIDER=azure_search` injects results from Azure AI Search.
 - `RAG_PROVIDER=none` disables retrieval.
 
+## Intake request contract
+
+[`schemas/intake-request.schema.json`](schemas/intake-request.schema.json)
+defines the version 1.0.0 intake contract using JSON Schema Draft 2020-12. A
+complete fictional submission is available at
+[`examples/intake-request.example.json`](examples/intake-request.example.json).
+
+The schema supports progressive intake. Every record must include:
+
+- `title`
+- `problemOpportunity`
+- `proposedIdea`
+- `expectedOutcome`
+- `requester.name` and `requester.email`
+
+Business context, users, value measures, AI and data considerations,
+dependencies, delivery, risks, responsible AI, security and privacy, ownership,
+and supporting links can be added as discovery progresses. A request type is
+intentionally not part of the contract. Unknown properties are rejected to
+surface misspelled or unsupported fields.
+
+This repository currently provides the contract, example, and guidance only.
+The agent does not yet generate, persist, or validate intake records at runtime.
+
 ## Prerequisites
 
 - Python 3.11 or later
