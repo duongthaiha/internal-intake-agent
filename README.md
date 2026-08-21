@@ -45,6 +45,10 @@ partitioned by the optional, system-generated `/id` field in the schema. The
 schema itself remains versioned in this repository; provisioning does not seed
 data or enable runtime persistence.
 
+The researched design for a purpose-built, idempotent MCP interface over this
+schema and storage is documented in
+[`docs/mcp-implementation.md`](docs/mcp-implementation.md).
+
 ## Prerequisites
 
 - Python 3.11 or later
