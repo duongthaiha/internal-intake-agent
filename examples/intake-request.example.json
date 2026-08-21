@@ -1,27 +1,27 @@
 {
-  "title": "AI-assisted innovation request triage",
-  "problemOpportunity": "Innovation requests arrive through several channels and often lack the detail reviewers need, creating repeated follow-up and inconsistent prioritisation.",
-  "proposedIdea": "Provide an intake assistant that guides requesters through a structured conversation, captures a complete submission, and highlights missing evidence for reviewers.",
-  "expectedOutcome": "Reduce clarification cycles while giving reviewers consistent information for discovery and prioritisation decisions.",
+  "title": "AI-assisted university innovation request triage",
+  "problemOpportunity": "Ideas from academic schools and professional services arrive through several channels and often lack the detail the university innovation panel needs, creating repeated follow-up and inconsistent prioritisation.",
+  "proposedIdea": "Provide an intake assistant that guides university staff and postgraduate researchers through a structured conversation, captures a complete submission, and highlights missing evidence for reviewers.",
+  "expectedOutcome": "Reduce clarification cycles while giving the university innovation panel consistent information for discovery, ethical review, and prioritisation decisions.",
   "requester": {
     "name": "Alex Taylor",
     "email": "alex.taylor@example.com",
-    "team": "Innovation Operations",
-    "organisation": "Contoso"
+    "team": "Research and Innovation Office",
+    "organisation": "Northbridge University"
   },
   "businessContext": {
-    "businessArea": "Enterprise Innovation",
-    "strategicAlignment": "Improve the speed and quality of experimentation.",
-    "currentProcess": "Requesters complete a free-text form and reviewers manually request missing details by email.",
-    "evidenceOfNeed": "Reviewers report that most submissions require at least one clarification round.",
-    "desiredTimeline": "Run a limited pilot during the next planning quarter."
+    "businessArea": "Research and Innovation",
+    "strategicAlignment": "Improve how ideas from teaching, research, and university operations progress into responsible experiments.",
+    "currentProcess": "University staff and researchers complete a free-text form, and panel reviewers manually request missing details by email.",
+    "evidenceOfNeed": "The innovation panel reports that most submissions require at least one clarification round before assessment.",
+    "desiredTimeline": "Run a limited pilot during the next academic term."
   },
   "targetUsers": {
     "primaryUsers": [
-      "Employees submitting ideas",
-      "Innovation portfolio reviewers"
+      "University staff and postgraduate researchers submitting ideas",
+      "University innovation panel reviewers"
     ],
-    "estimatedUserCount": 500,
+    "estimatedUserCount": 2500,
     "userNeeds": "Requesters need clear guidance; reviewers need concise, comparable submissions.",
     "accessibilityNeeds": "The conversational flow and generated summary must support keyboard and screen-reader use."
   },
@@ -74,7 +74,7 @@
       {
         "name": "Requester responses",
         "description": "Information entered during the intake conversation.",
-        "owner": "Innovation Operations",
+        "owner": "Research and Innovation Office",
         "classification": "Internal",
         "accessStatus": "Available for a pilot"
       }
@@ -82,19 +82,19 @@
     "containsPersonalData": true,
     "containsSensitiveData": false,
     "dataQuality": "Free-text quality varies; the requester must confirm the generated record.",
-    "dataResidency": "Use the organisation's approved regional services.",
-    "retentionRequirements": "Align with the existing innovation request retention policy."
+    "dataResidency": "Use the university's approved regional services.",
+    "retentionRequirements": "Align with the university records retention schedule for innovation proposals."
   },
   "dependencies": [
     {
-      "name": "Innovation request system",
+      "name": "University innovation portal",
       "description": "Receives the approved structured record.",
-      "owner": "Innovation Operations"
+      "owner": "Research and Innovation Office"
     },
     {
       "name": "Identity and access management",
-      "description": "Provides authenticated employee access.",
-      "owner": "Enterprise Technology"
+      "description": "Provides authenticated access for university staff and postgraduate researchers.",
+      "owner": "Digital Services"
     }
   ],
   "deliveryConsiderations": {
@@ -109,7 +109,7 @@
       "Service integration"
     ],
     "budgetContext": "Discovery funding is available; production funding depends on pilot evidence.",
-    "targetMilestone": "Pilot readiness review next quarter"
+    "targetMilestone": "Pilot readiness review before the next academic term"
   },
   "risks": [
     {
@@ -149,28 +149,28 @@
       "Show a privacy notice before collection"
     ],
     "regulatoryRequirements": [
-      "Complete the organisation's privacy and responsible-AI reviews before pilot launch"
+      "Complete the university's privacy, research ethics, and responsible-AI reviews before pilot launch"
     ],
-    "reviewNotes": "Detailed review is still required because request descriptions may include personal or commercially sensitive information."
+    "reviewNotes": "Detailed review is still required because proposals may include personal data, unpublished research, or commercially sensitive information."
   },
   "ownership": {
     "businessOwner": {
       "name": "Jordan Lee",
       "email": "jordan.lee@example.com",
-      "team": "Innovation Operations",
-      "organisation": "Contoso"
+      "team": "Research and Innovation Office",
+      "organisation": "Northbridge University"
     },
     "technicalOwner": {
       "name": "Morgan Chen",
       "email": "morgan.chen@example.com",
-      "team": "Enterprise Technology",
-      "organisation": "Contoso"
+      "team": "Digital Services",
+      "organisation": "Northbridge University"
     }
   },
   "supportingLinks": [
     {
       "label": "Fictional current-process overview",
-      "url": "https://example.com/innovation-intake-process"
+      "url": "https://example.edu/innovation-intake-process"
     }
   ],
   "additionalNotes": "Start with a small reviewer group and use pilot feedback to refine optional questions."
