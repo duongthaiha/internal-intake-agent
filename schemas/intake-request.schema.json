@@ -10,7 +10,6 @@
     "title",
     "problemOpportunity",
     "proposedIdea",
-    "expectedOutcome",
     "requester"
   ],
   "properties": {

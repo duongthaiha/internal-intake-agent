@@ -26,7 +26,6 @@ The schema supports progressive intake. Every record must include:
 - `title`
 - `problemOpportunity`
 - `proposedIdea`
-- `expectedOutcome`
 - `requester.name` and `requester.email`
 
 Business context, users, value measures, AI and data considerations,
