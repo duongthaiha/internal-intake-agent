@@ -1,0 +1,619 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/duongthaiha/internal-intake-agent/schemas/intake-request.schema.json",
+  "$comment": "Schema version 1.0.0",
+  "title": "Innovation and AI use case intake request",
+  "description": "Captures the core idea and optional discovery details for an innovation or AI use case request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "problemOpportunity",
+    "proposedIdea",
+    "expectedOutcome",
+    "requester"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "A short, recognizable name for the request.",
+      "minLength": 3,
+      "maxLength": 150
+    },
+    "problemOpportunity": {
+      "type": "string",
+      "description": "The current problem, unmet need, or opportunity and why it matters.",
+      "minLength": 20,
+      "maxLength": 5000
+    },
+    "proposedIdea": {
+      "type": "string",
+      "description": "The proposed innovation or AI-enabled approach.",
+      "minLength": 20,
+      "maxLength": 5000
+    },
+    "expectedOutcome": {
+      "type": "string",
+      "description": "The desired result and the change expected if the idea succeeds.",
+      "minLength": 10,
+      "maxLength": 3000
+    },
+    "requester": {
+      "$ref": "#/$defs/requiredPerson",
+      "description": "The person submitting the request."
+    },
+    "businessContext": {
+      "$ref": "#/$defs/businessContext"
+    },
+    "targetUsers": {
+      "$ref": "#/$defs/targetUsers"
+    },
+    "valueAndSuccess": {
+      "$ref": "#/$defs/valueAndSuccess"
+    },
+    "aiConsiderations": {
+      "$ref": "#/$defs/aiConsiderations"
+    },
+    "dataConsiderations": {
+      "$ref": "#/$defs/dataConsiderations"
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "Systems, teams, initiatives, approvals, or other dependencies.",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "maxItems": 50,
+      "uniqueItems": true
+    },
+    "deliveryConsiderations": {
+      "$ref": "#/$defs/deliveryConsiderations"
+    },
+    "risks": {
+      "type": "array",
+      "description": "Known delivery, adoption, operational, legal, or technical risks.",
+      "items": {
+        "$ref": "#/$defs/risk"
+      },
+      "maxItems": 50
+    },
+    "responsibleAI": {
+      "$ref": "#/$defs/responsibleAI"
+    },
+    "securityAndPrivacy": {
+      "$ref": "#/$defs/securityAndPrivacy"
+    },
+    "ownership": {
+      "$ref": "#/$defs/ownership"
+    },
+    "supportingLinks": {
+      "type": "array",
+      "description": "Links to research, process documents, prototypes, or other evidence.",
+      "items": {
+        "$ref": "#/$defs/supportingLink"
+      },
+      "maxItems": 20
+    },
+    "additionalNotes": {
+      "type": "string",
+      "description": "Relevant information not covered by the structured fields.",
+      "maxLength": 5000
+    }
+  },
+  "$defs": {
+    "optionalPerson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 320
+        },
+        "team": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "organisation": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "requiredPerson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "email"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 320
+        },
+        "team": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "organisation": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "businessContext": {
+      "type": "object",
+      "description": "Business background that helps assess relevance and urgency.",
+      "additionalProperties": false,
+      "properties": {
+        "businessArea": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "strategicAlignment": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "currentProcess": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "evidenceOfNeed": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "desiredTimeline": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "targetUsers": {
+      "type": "object",
+      "description": "People who experience the problem or would use or be affected by the solution.",
+      "additionalProperties": false,
+      "properties": {
+        "primaryUsers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "otherAffectedGroups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "estimatedUserCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "userNeeds": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "accessibilityNeeds": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "valueAndSuccess": {
+      "type": "object",
+      "description": "Expected value and evidence that would demonstrate success.",
+      "additionalProperties": false,
+      "properties": {
+        "expectedBenefits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "successMeasures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/successMeasure"
+          },
+          "maxItems": 20
+        },
+        "costOfDoingNothing": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        }
+      }
+    },
+    "successMeasure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measure"
+      ],
+      "properties": {
+        "measure": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "baseline": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "timeframe": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "aiConsiderations": {
+      "type": "object",
+      "description": "How AI may contribute and where people remain involved.",
+      "additionalProperties": false,
+      "properties": {
+        "whyAI": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "tasksForAI": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "humanRole": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "acceptableFailure": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "nonAIAlternative": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "dataConsiderations": {
+      "type": "object",
+      "description": "Data needed to design, operate, and assess the idea.",
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dataSource"
+          },
+          "maxItems": 30
+        },
+        "containsPersonalData": {
+          "type": "boolean"
+        },
+        "containsSensitiveData": {
+          "type": "boolean"
+        },
+        "dataQuality": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "dataResidency": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "retentionRequirements": {
+          "type": "string",
+          "maxLength": 1000
+        }
+      }
+    },
+    "dataSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "owner": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "classification": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "accessStatus": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "owner": {
+          "type": "string",
+          "maxLength": 300
+        }
+      }
+    },
+    "deliveryConsiderations": {
+      "type": "object",
+      "description": "Known constraints and readiness information for discovery or delivery.",
+      "additionalProperties": false,
+      "properties": {
+        "workCompleted": {
+          "type": "string",
+          "maxLength": 3000
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "requiredSkills": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "budgetContext": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "targetMilestone": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1500
+        },
+        "impact": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "mitigation": {
+          "type": "string",
+          "maxLength": 1500
+        }
+      }
+    },
+    "responsibleAI": {
+      "type": "object",
+      "description": "Early responsible-AI considerations; not a substitute for formal review.",
+      "additionalProperties": false,
+      "properties": {
+        "affectedStakeholders": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "fairnessConsiderations": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "transparencyNeeds": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "humanOversight": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "potentialHarms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "harmMitigations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        }
+      }
+    },
+    "securityAndPrivacy": {
+      "type": "object",
+      "description": "Known security, privacy, compliance, and regulatory considerations.",
+      "additionalProperties": false,
+      "properties": {
+        "securityRequirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "privacyRequirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "regulatoryRequirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "reviewNotes": {
+          "type": "string",
+          "maxLength": 3000
+        }
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "description": "People accountable for sponsoring, shaping, or operating the idea.",
+      "additionalProperties": false,
+      "properties": {
+        "businessOwner": {
+          "$ref": "#/$defs/optionalPerson"
+        },
+        "technicalOwner": {
+          "$ref": "#/$defs/optionalPerson"
+        },
+        "executiveSponsor": {
+          "$ref": "#/$defs/optionalPerson"
+        },
+        "subjectMatterExperts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/optionalPerson"
+          },
+          "maxItems": 20
+        }
+      }
+    },
+    "supportingLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "url"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        }
+      }
+    }
+  }
+}
