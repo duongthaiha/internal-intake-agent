@@ -3,22 +3,22 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": {
-      "value": "${AZURE_LOCATION}"
+      "value": "${AZURE_LOCATION=uksouth}"
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
     },
-    "foundryAccountName": {
-      "value": "${AZURE_AI_ACCOUNT_NAME=}"
+    "aiServices": {
+      "value": "${AZURE_AI_SERVICES_NAME=aif-maf-poc}"
     },
-    "foundryProjectName": {
-      "value": "${AZURE_AI_PROJECT_NAME=maf-poc-project}"
-    },
-    "modelDeploymentName": {
-      "value": "${AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.6-luna}"
+    "firstProjectName": {
+      "value": "${AZURE_AI_PROJECT_BASE_NAME=maf-poc-project}"
     },
     "modelName": {
-      "value": "${AZURE_AI_MODEL_NAME=gpt-5.6-luna}"
+      "value": "${AZURE_AI_MODEL_NAME=gpt-5.6-sol}"
+    },
+    "modelFormat": {
+      "value": "${AZURE_AI_MODEL_FORMAT=OpenAI}"
     },
     "modelVersion": {
       "value": "${AZURE_AI_MODEL_VERSION=2026-07-09}"
@@ -27,13 +27,55 @@
       "value": "${AZURE_AI_MODEL_SKU_NAME=GlobalStandard}"
     },
     "modelCapacity": {
-      "value": "${AZURE_AI_MODEL_CAPACITY=500}"
+      "value": "${AZURE_AI_MODEL_CAPACITY=250}"
     },
-    "cosmosAccountName": {
-      "value": "${AZURE_COSMOS_ACCOUNT_NAME=}"
+    "vnetName": {
+      "value": "${AZURE_VIRTUAL_NETWORK_NAME=maf-poc-vnet}"
     },
-    "searchServiceName": {
-      "value": "${AZURE_SEARCH_SERVICE_NAME=}"
+    "vnetAddressPrefix": {
+      "value": "${AZURE_VNET_ADDRESS_PREFIX=192.168.0.0/16}"
+    },
+    "agentSubnetPrefix": {
+      "value": "${AZURE_AGENT_SUBNET_PREFIX=192.168.0.0/24}"
+    },
+    "peSubnetPrefix": {
+      "value": "${AZURE_PE_SUBNET_PREFIX=192.168.1.0/24}"
+    },
+    "enableContainerRegistry": {
+      "value": "${AZURE_ENABLE_CONTAINER_REGISTRY=true}"
+    },
+    "developerIpCidr": {
+      "value": "${AZURE_ACR_DEVELOPER_IP_CIDR=}"
+    },
+    "allowedClientIpCidr": {
+      "value": "${AZURE_ALLOWED_CLIENT_IP_CIDR}"
+    },
+    "searchIndexName": {
+      "value": "${AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge}"
+    },
+    "cosmosWorkloadDatabaseName": {
+      "value": "${AZURE_COSMOS_DATABASE_NAME=agent-framework}"
+    },
+    "cosmosWorkloadContainerName": {
+      "value": "${AZURE_COSMOS_CONTAINER_NAME=chat-history}"
+    },
+    "cosmosWorkloadPartitionKeyPath": {
+      "value": "${AZURE_COSMOS_PARTITION_KEY_PATH=/session_id}"
+    },
+    "adminSubnetPrefix": {
+      "value": "${AZURE_ADMIN_SUBNET_PREFIX=192.168.2.0/24}"
+    },
+    "deployAdminAccess": {
+      "value": "${AZURE_DEPLOY_ADMIN_ACCESS=false}"
+    },
+    "bastionSubnetPrefix": {
+      "value": "${AZURE_BASTION_SUBNET_PREFIX=192.168.3.0/26}"
+    },
+    "adminUsername": {
+      "value": "${AZURE_ADMIN_VM_USERNAME=azadmin}"
+    },
+    "adminPassword": {
+      "value": "${AZURE_ADMIN_VM_PASSWORD}"
     }
   }
 }

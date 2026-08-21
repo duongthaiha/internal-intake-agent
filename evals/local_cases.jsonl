@@ -1,4 +1,4 @@
-{"query":"Which model deployment does this POC use?","expected_output":{"terms":[["gpt-5.6-luna"]],"source":"maf-poc.md"}}
+{"query":"Which model deployment does this POC use?","expected_output":{"terms":[["gpt-5.6-sol"]],"source":"maf-poc.md"}}
 {"query":"Which conversation history provider is used for local development?","expected_output":{"terms":[["in-memory","in memory"]],"source":"maf-poc.md"}}
 {"query":"How do Cosmos DB and Azure AI Search authenticate in Azure deployments?","expected_output":{"terms":[["Microsoft Entra ID","Entra ID"]],"source":"maf-poc.md"}}
 {"query":"Is DevUI intended for production use?","expected_output":{"terms":[["not intended for production","not for production","not production use"]],"source":"maf-poc.md"}}
