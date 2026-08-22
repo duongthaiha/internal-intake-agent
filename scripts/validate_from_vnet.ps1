@@ -36,6 +36,7 @@ param(
     [string]$SearchEndpoint,
     [string]$StorageAccountName,
     [string]$AcrLoginServer,
+    [string]$ApplicationInsightsResourceId,
     [string]$Location = "uksouth",
 
     [string]$AgentName = "maf-poc-agent",
@@ -45,8 +46,11 @@ param(
 
     [int]$DnsTimeoutSeconds = 10,
     [int]$PortTimeoutSeconds = 10,
+    [int]$TelemetryRetryCount = 10,
+    [int]$TelemetryRetryDelaySeconds = 30,
 
-    [switch]$SkipAgentInvoke
+    [switch]$SkipAgentInvoke,
+    [switch]$SkipTelemetryValidation
 )
 
 $ErrorActionPreference = "Stop"
@@ -166,6 +170,145 @@ function Test-PrivateServiceEndpoint {
     return [PSCustomObject]@{ Label = $Label; HostName = $HostName; Passed = $true; Required = $Required; Detail = "ok" }
 }
 
+function ConvertTo-KqlStringLiteral {
+    param([AllowEmptyString()][string]$Value = "")
+
+    return $Value.Replace("'", "''")
+}
+
+function Assert-CostTelemetry {
+    param(
+        [Parameter(Mandatory)][string]$ResourceId,
+        [Parameter(Mandatory)][string]$FoundryAgentName,
+        [Parameter(Mandatory)][datetime]$InvocationStartedAt,
+        [string]$ExpectedModel,
+        [int]$RetryCount,
+        [int]$RetryDelaySeconds
+    )
+
+    $agentNameLiteral = ConvertTo-KqlStringLiteral $FoundryAgentName
+    $modelLiteral = ConvertTo-KqlStringLiteral $ExpectedModel
+    $startTimeLiteral = $InvocationStartedAt.AddMinutes(-1).ToUniversalTime().ToString("o")
+
+    if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+        throw "Azure CLI ('az') is required for cost telemetry validation."
+    }
+    az extension show --name application-insights --output none 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw (
+            "The Azure CLI 'application-insights' extension is required for cost telemetry validation. " +
+            "Install it with 'az extension add --name application-insights'."
+        )
+    }
+
+    $query = @"
+let agentRequests = materialize(
+    requests
+    | where timestamp >= datetime($startTimeLiteral)
+    | extend
+        foundryAgentName = coalesce(
+            tostring(customDimensions["gen_ai.agent.name"]),
+            tostring(customDimensions["azure.ai.agentserver.agent_name"])
+        ),
+        agentId = tostring(customDimensions["gen_ai.agent.id"])
+    | extend agentNameFromId = tostring(split(agentId, ":")[0])
+    | where foundryAgentName == '$agentNameLiteral'
+        or agentNameFromId == '$agentNameLiteral'
+    | project operation_Id
+);
+dependencies
+| where timestamp >= datetime($startTimeLiteral)
+| where tostring(customDimensions["gen_ai.operation.name"]) == "chat"
+| extend
+    dependencyAgentName = tostring(customDimensions["gen_ai.agent.name"]),
+    requestModel = tostring(customDimensions["gen_ai.request.model"]),
+    responseModel = tostring(customDimensions["gen_ai.response.model"]),
+    inputTokens = toint(customDimensions["gen_ai.usage.input_tokens"]),
+    outputTokens = toint(customDimensions["gen_ai.usage.output_tokens"])
+| where operation_Id in (agentRequests)
+    or dependencyAgentName == '$agentNameLiteral'
+| summarize
+    chatSpans = count(),
+    modelAttributedSpans = countif(isnotempty(requestModel) or isnotempty(responseModel)),
+    expectedModelSpans = countif(
+        isempty('$modelLiteral')
+        or requestModel == '$modelLiteral'
+        or responseModel == '$modelLiteral'
+        or responseModel startswith strcat('$modelLiteral', '-')
+    ),
+    inputTokenSpans = countif(isnotnull(inputTokens)),
+    outputTokenSpans = countif(isnotnull(outputTokens)),
+    totalInputTokens = sum(inputTokens),
+    totalOutputTokens = sum(outputTokens),
+    models = make_set(iff(isempty(responseModel), requestModel, responseModel), 10)
+"@
+
+    $telemetry = $null
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        $result = az monitor app-insights query `
+            --app $ResourceId `
+            --analytics-query $query `
+            --output json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to query Application Insights resource '$ResourceId'."
+        }
+
+        $table = $result.tables | Select-Object -First 1
+        if ($table -and $table.rows.Count -gt 0) {
+            $columns = @($table.columns | ForEach-Object { $_.name })
+            $row = $table.rows[0]
+            $telemetry = [ordered]@{}
+            for ($index = 0; $index -lt $columns.Count; $index++) {
+                $telemetry[$columns[$index]] = $row[$index]
+            }
+        }
+
+        if ($telemetry -and [int]$telemetry.chatSpans -gt 0) {
+            break
+        }
+        if ($attempt -lt $RetryCount) {
+            Write-Output "Waiting for hosted-agent telemetry ingestion (attempt $attempt of $RetryCount)."
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+
+    if (-not $telemetry -or [int]$telemetry.chatSpans -eq 0) {
+        throw (
+            "No correlated chat spans reached Application Insights after $RetryCount attempts. " +
+            "Check the hosted agent's Application Insights connection and Azure Monitor ingestion path."
+        )
+    }
+    if ([int]$telemetry.modelAttributedSpans -eq 0) {
+        throw (
+            "Chat spans are missing gen_ai.request.model and gen_ai.response.model. " +
+            "Foundry cannot map token usage to reference model pricing without model attribution."
+        )
+    }
+    if ([int]$telemetry.expectedModelSpans -eq 0) {
+        $models = @($telemetry.models) -join ", "
+        throw "Chat spans were attributed to [$models], not the expected model deployment '$ExpectedModel'."
+    }
+    if (
+        [int]$telemetry.inputTokenSpans -eq 0 -or
+        [int]$telemetry.outputTokenSpans -eq 0 -or
+        ([long]$telemetry.totalInputTokens + [long]$telemetry.totalOutputTokens) -le 0
+    ) {
+        throw (
+            "Chat spans are missing nonzero gen_ai.usage.input_tokens or " +
+            "gen_ai.usage.output_tokens values required for Foundry cost estimation."
+        )
+    }
+
+    Write-Output (
+        "Cost telemetry verified: model(s) [$(@($telemetry.models) -join ', ')], " +
+        "$($telemetry.totalInputTokens) input tokens, $($telemetry.totalOutputTokens) output tokens."
+    )
+    Write-Output (
+        "Foundry derives estimated cost from these model and token attributes; " +
+        "the agent does not emit a dollar-cost metric."
+    )
+}
+
 # ---------------------------------------------------------------------------
 # Resolve endpoints (explicit parameter, else azd env, else fail per-check)
 # ---------------------------------------------------------------------------
@@ -176,6 +319,9 @@ $storageAccountName = Get-EffectiveValue -Explicit $StorageAccountName -AzdName 
 $acrLoginServer = Get-EffectiveValue -Explicit $AcrLoginServer -AzdName "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 if (-not $ModelDeploymentName) {
     $ModelDeploymentName = Get-EffectiveValue -Explicit $null -AzdName "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+}
+if (-not $ApplicationInsightsResourceId) {
+    $ApplicationInsightsResourceId = Get-EffectiveValue -Explicit $null -AzdName "APPLICATIONINSIGHTS_RESOURCE_ID"
 }
 
 $results = [System.Collections.Generic.List[object]]::new()
@@ -213,6 +359,7 @@ if ($SkipAgentInvoke) {
         "'$RepoPath' (or pass -RepoPath), or re-run with -SkipAgentInvoke to suppress this warning."
     )
 } else {
+    $invocationStartedAt = (Get-Date).ToUniversalTime()
     $response = azd ai agent invoke $AgentName $Question `
         --environment $EnvironmentName `
         --cwd $RepoPath `
@@ -230,6 +377,23 @@ if ($SkipAgentInvoke) {
         throw "The hosted agent response was not grounded with the expected knowledge source '$ExpectedSource'."
     }
     Write-Output "Hosted agent invoke from inside the VNet succeeded and the response was grounded."
+
+    if ($SkipTelemetryValidation) {
+        Write-Output "Skipping cost telemetry validation (-SkipTelemetryValidation)."
+    } elseif (-not $ApplicationInsightsResourceId) {
+        throw (
+            "Cost telemetry validation requires APPLICATIONINSIGHTS_RESOURCE_ID in the azd environment " +
+            "or an explicit -ApplicationInsightsResourceId value."
+        )
+    } else {
+        Assert-CostTelemetry `
+            -ResourceId $ApplicationInsightsResourceId `
+            -FoundryAgentName $AgentName `
+            -InvocationStartedAt $invocationStartedAt `
+            -ExpectedModel $ModelDeploymentName `
+            -RetryCount $TelemetryRetryCount `
+            -RetryDelaySeconds $TelemetryRetryDelaySeconds
+    }
 }
 
 Write-Output "All required private-connectivity checks from inside the VNet passed."

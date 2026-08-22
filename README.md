@@ -296,6 +296,28 @@ also emitted when `COSMOS_LOAD_MESSAGES=true`. Message content capture is
 disabled through `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false`.
 New spans can take several minutes to appear in the Foundry trace viewer.
 
+Foundry calculates the **Estimated cost** value; the agent does not emit a
+dollar-cost metric. The calculation requires model-call spans with
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, and
+`gen_ai.request.model` or `gen_ai.response.model`. The VNet validation invokes
+the hosted agent, waits for telemetry ingestion, and verifies those attributes:
+
+```powershell
+.\scripts\validate_from_vnet.ps1 -EnvironmentName maf-poc-byo
+```
+
+Run this from the admin VM or another environment with the required private
+network connectivity and Application Insights read access. The Azure CLI
+`application-insights` extension is also required. Re-run `azd provision` after
+upgrading an existing environment so azd records the new
+`APPLICATIONINSIGHTS_RESOURCE_ID` output, or pass
+`-ApplicationInsightsResourceId` explicitly. Use
+`-SkipTelemetryValidation` only when validating connectivity without querying
+telemetry. If the attributes pass validation but Foundry still displays `$0`,
+the selected model might not yet have reference pricing in the preview
+dashboard, or the estimate might be below the tile's currency precision. Use
+Azure Cost Management for billed cost and financial reconciliation.
+
 With `--reload`, DevUI restarts when project files change. Open the displayed
 URL manually; automatic browser opening is disabled in reload mode to avoid
 opening a new tab after every restart.

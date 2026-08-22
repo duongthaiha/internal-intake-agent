@@ -643,6 +643,7 @@ output AZURE_CONTAINER_REGISTRY_NAME string = enableContainerRegistry ? acr.outp
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableContainerRegistry ? acr.outputs.acrLoginServer : ''
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.appInsightsConnectionString
+output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsights.outputs.appInsightsId
 
 output AZURE_VIRTUAL_NETWORK_NAME string = vnet.outputs.virtualNetworkName
 output AZURE_AGENT_SUBNET_ID string = vnet.outputs.agentSubnetId
