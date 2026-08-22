@@ -468,6 +468,16 @@ module formatProjectWorkspaceId 'modules-network-secured/format-project-workspac
   }
 }
 
+// Native scheduled evaluations execute as the project managed identity.
+module scheduledEvaluationRoleAssignment 'modules-local/foundry-scheduled-evaluation-role.bicep' = {
+  name: 'scheduled-eval-ra-${uniqueSuffix}-deployment'
+  params: {
+    accountName: aiAccount.outputs.accountName
+    projectName: aiProject.outputs.projectName
+    projectPrincipalId: aiProject.outputs.projectPrincipalId
+  }
+}
+
 module storageAccountRoleAssignment 'modules-network-secured/azure-storage-account-role-assignment.bicep' = {
   name: 'storage-${azureStorageName}-${uniqueSuffix}-deployment'
   scope: resourceGroup(azureStorageSubscriptionId, azureStorageResourceGroupName)
@@ -656,3 +666,4 @@ output AZURE_BASTION_HOST_NAME string = deployAdminAccess ? adminAccess.outputs.
 output AZURE_BASTION_PUBLIC_IP string = deployAdminAccess ? adminAccess.outputs.bastionPublicIpAddress : ''
 
 output ENABLE_HOSTED_AGENTS bool = true
+output FOUNDRY_SCHEDULED_EVALUATION_ROLE_ASSIGNMENT_ID string = scheduledEvaluationRoleAssignment.outputs.roleAssignmentId

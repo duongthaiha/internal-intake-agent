@@ -156,6 +156,10 @@ The local `.env` can use:
 ```dotenv
 FOUNDRY_PROJECT_ENDPOINT=https://<foundry-account>.services.ai.azure.com/api/projects/maf-poc-project
 FOUNDRY_MODEL=gpt-5.6-sol
+AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-5.6-sol
+AZURE_TENANT_ID=<tenant-guid>
+AGENT_MAF_POC_AGENT_NAME=maf-poc-agent
+AGENT_MAF_POC_AGENT_VERSION=<deployed-version>
 LOG_LEVEL=INFO
 HISTORY_PROVIDER=memory
 COSMOS_STARTUP_CHECK=false
@@ -169,6 +173,14 @@ AZURE_COSMOS_CONTAINER_NAME=chat-history
 AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
 AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge
 ```
+
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`, `AZURE_TENANT_ID`,
+`AGENT_MAF_POC_AGENT_NAME`, and `AGENT_MAF_POC_AGENT_VERSION` are required only
+for Foundry cloud evaluation. The agent name and version must identify an
+existing hosted-agent version; there is no default version because evaluating a
+stale deployment would give misleading results. These values are deployment
+identifiers, not secrets. The Application Insights connection string is
+sensitive and must remain in the azd environment or local process environment.
 
 The Cosmos container uses `/session_id` as its partition key.
 
@@ -428,30 +440,100 @@ function tool, so the starter RAG cases do not declare tool calls.
 
 ### Foundry cloud evaluation
 
-The deployed hosted agent has a Foundry smoke evaluation using the reviewed
-cases in `evals/foundry_smoke.jsonl`. It invokes the deployed agent and scores
-responses with these built-in cloud evaluators:
+The deployed hosted agent uses the reviewed regression cases in
+`evals/foundry_smoke.jsonl`. The evaluation invokes the exact deployed agent
+version and scores responses with these built-in cloud evaluators:
 
 - `relevance`
 - `task_adherence`
 - `intent_resolution`
 - `indirect_attack`
 
-Load the deployed azd environment values and run:
+It also registers `maf_poc_expected_behavior`, a prompt-based evaluator that
+scores each response against the row's reviewed `expected_behavior`. The custom
+evaluator treats the query, response, and rubric as untrusted data.
+
+The dataset version is immutable. The registration stores the local SHA-256 in
+Foundry dataset tags. If local content changes, choose a new
+`--dataset-version`; the script refuses to reuse a version whose content cannot
+be verified.
+
+Authenticate to the deployment tenant from the single allowlisted client `/32`
+or an approved private-network host, select the deployed azd environment, and
+load its values:
 
 ```powershell
 $env:AZURE_DEV_USER_AGENT = "microsoft_foundry_skill"
-azd env get-values | ForEach-Object {
+az login --tenant "<tenant-guid>"
+azd env select maf-poc-byo
+azd env get-values --environment maf-poc-byo | ForEach-Object {
   if ($_ -match '^([^=]+)="(.*)"$') {
     [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
   }
 }
+```
+
+The signed-in operator needs **Foundry User** on the project. Native schedules
+execute as the Foundry project managed identity; the Bicep deployment grants
+that identity **Foundry User** at project scope. Role propagation can take
+several minutes.
+
+Run a one-off evaluation:
+
+```powershell
 python -m scripts.evaluate_foundry
 ```
 
 The script authenticates with the Azure CLI identity, uploads a versioned
 Foundry dataset, creates an agent-target evaluation, waits for completion, and
 saves per-item results under `.foundry/results/`.
+
+### Native daily Foundry evaluation
+
+Foundry's **Recurring Configs** supports scheduled evaluations over a registered
+golden dataset. This repository configures the native schedule directly through
+`AIProjectClient.beta.schedules`; it does not depend on GitHub Actions, a VM
+task, or a Foundry agent routine.
+
+After deploying the RBAC change, create or update the daily schedule:
+
+```powershell
+python -m scripts.evaluate_foundry --action schedule
+```
+
+The stable `maf-poc-daily-regression` schedule runs every day at **09:00 UTC**.
+Schedule upsert does not invoke the agent immediately, but each scheduled run
+uses target-model and judge-model tokens and therefore incurs cost. The
+configuration is a preview Foundry capability without an SLA.
+
+Check provisioning status and the ten most recent runs:
+
+```powershell
+python -m scripts.evaluate_foundry --action status
+```
+
+Foundry schedule run history is also available under **Evaluation** >
+**Recurring Configs** in the Foundry portal. Local schedule references are
+cached under `.foundry/schedules/`; response payloads and evaluation outputs are
+ignored by Git.
+
+Hosted-agent versions are immutable, and the schedule intentionally captures an
+exact version. After every agent deployment, reload the new azd values and run
+the schedule upsert command again. A failed or missing
+`AGENT_MAF_POC_AGENT_VERSION` stops setup rather than silently targeting an old
+version.
+
+To use a revised dataset, increment the immutable version:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --action schedule `
+  --dataset-version 3
+```
+
+Disable or delete the schedule through Foundry **Recurring Configs** after
+reviewing the selected schedule ID. The repository intentionally provides no
+automatic deletion path.
 
 ## Foundry Agent Service configuration
 
