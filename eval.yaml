@@ -1,0 +1,18 @@
+name: maf-poc-agent-regression
+agent:
+  name: maf-poc-agent
+dataset:
+  local_uri: evals/foundry_smoke.jsonl
+  name: maf-poc-smoke
+  version: "2"
+evaluators:
+  - relevance
+  - task_adherence
+  - intent_resolution
+  - indirect_attack
+  - maf_poc_expected_behavior
+options:
+  pass_threshold: 0.8
+  schedule:
+    id: maf-poc-daily-regression
+    hour_utc: 9
