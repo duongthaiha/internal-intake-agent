@@ -484,9 +484,66 @@ Run a one-off evaluation:
 python -m scripts.evaluate_foundry
 ```
 
-The script authenticates with the Azure CLI identity, uploads a versioned
-Foundry dataset, creates an agent-target evaluation, waits for completion, and
-saves per-item results under `.foundry/results/`.
+The default `smoke` suite authenticates with the Azure CLI identity, uploads a
+versioned Foundry dataset, invokes the exact hosted-agent version, waits for
+completion, and saves per-item results under `.foundry/results/`.
+
+#### Comprehensive multi-turn evaluation
+
+`evals/foundry_comprehensive_multi_turn.jsonl` contains reviewed, fictional
+internal-intake conversations based on Foundry's OpenAI-style `messages` schema.
+Each row also includes the flattened fields needed by turn-level evaluators:
+
+```json
+{"case_id":"missing-required-details","category":"clarification","messages":[{"role":"user","content":[{"type":"text","text":"Can you submit this incomplete idea?"}]},{"role":"assistant","content":[{"type":"text","text":"Not yet. The required details are missing."}]}],"query":"Submit an incomplete request.","response":"Not yet. The required details are missing.","ground_truth":"Decline to submit and identify missing required fields.","context":"Relevant reviewed source text.","expected_behavior":"Ask for missing fields and do not invent them.","retrieval_ground_truth":[{"document_id":"intake-schema","query_relevance_label":4}],"retrieved_documents":[{"document_id":"intake-schema","relevance_score":1.0}]}
+```
+
+Run both comprehensive evaluations:
+
+```powershell
+python -m scripts.evaluate_foundry --suite comprehensive
+```
+
+The command registers `maf-poc-comprehensive:1` and creates two direct dataset
+evaluations. The turn-level run scores each reviewed final response; the
+conversation-level run scores each complete `messages` interaction. They must
+be separate because Foundry rejects a run that mixes evaluators with
+incompatible evaluation levels.
+
+The comprehensive suite evaluates reviewed transcripts and does **not** invoke
+the deployed hosted agent. Keep the default smoke suite for live deployed-agent
+regression. When the comprehensive dataset changes, increment its immutable
+version:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --suite comprehensive `
+  --dataset-version 2
+```
+
+| Run | Included evaluators |
+| --- | --- |
+| Turn | Coherence, Fluency, Similarity, F1, BLEU, GLEU, ROUGE, METEOR, Retrieval, Document Retrieval, Groundedness, Groundedness Pro, Relevance, Response Completeness, Hate and Unfairness, Sexual, Violence, Self-Harm, Protected Materials, Indirect Attack, Ungrounded Attributes, Task Adherence, Task Completion, Intent Resolution, Quality Grader, and `maf_poc_expected_behavior` |
+| Conversation | Customer Satisfaction, Task Completion, Coherence, and Groundedness |
+
+Tool Call Accuracy, Tool Selection, Tool Input Accuracy, Tool Output
+Utilization, Tool Call Success, and Task Navigation Efficiency are excluded.
+This agent has no user-defined function tools, and Microsoft documents limited
+evaluator support for Azure AI Search, which this workload uses as a context
+provider rather than a function tool. Prohibited Actions and Sensitive Data
+Leakage are also excluded because their agent-target contracts require tool-call
+artifacts. Code Vulnerability is not applicable to this non-code-generation
+workload. Azure OpenAI graders and generated rubric/custom evaluators are
+configurable extensions rather than fixed built-in signals; the existing
+expected-behavior custom evaluator remains the domain-specific judge.
+
+Several comprehensive evaluators and conversation-level evaluation are preview
+features and might not be available in every Foundry region. The command fails
+if Foundry rejects an unavailable evaluator rather than silently reducing
+coverage. Each LLM-judge and hosted safety evaluation can incur model or
+evaluation-service cost. Token-overlap metrics are included for complete
+built-in coverage but should be treated as secondary signals for open-ended
+answers.
 
 ### Native daily Foundry evaluation
 
