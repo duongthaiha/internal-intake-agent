@@ -13,5 +13,6 @@ jsonschema
 PyJWT[crypto]
 pydantic
 python-dotenv
+PyYAML==6.0.2
 uvicorn[standard]
 watchfiles

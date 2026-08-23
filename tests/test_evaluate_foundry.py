@@ -15,9 +15,12 @@ from scripts.evaluate_foundry import (
     COMPREHENSIVE_DATASET_PATH,
     DATASET_SHA_TAG,
     EvaluationTarget,
+    build_comprehensive_agent_criteria,
     build_comprehensive_conversation_criteria,
     build_comprehensive_turn_criteria,
     build_jsonl_run_data_source,
+    build_inline_jsonl_run_data_source,
+    build_inline_run_data_source,
     build_run_data_source,
     build_schedule,
     build_testing_criteria,
@@ -26,13 +29,53 @@ from scripts.evaluate_foundry import (
     load_comprehensive_dataset,
     load_dataset,
     load_evaluation_target,
+    find_or_create_evaluation,
+    filter_criteria_for_region,
+    parse_raw_agent_response,
     register_dataset,
+    replay_conversations,
+    replay_dataset_version,
     run_comprehensive_evaluation,
     show_schedule,
+    analyze_output_items,
 )
 
 
 class EvaluateFoundryTests(unittest.TestCase):
+    def test_analysis_counts_nested_evaluator_errors(self) -> None:
+        analysis = analyze_output_items(
+            [
+                {
+                    "results": [
+                        {
+                            "status": "error",
+                            "sample": {
+                                "error": {
+                                    "message": (
+                                        "PermissionDenied: principal lacks the "
+                                        "required data action"
+                                    )
+                                }
+                            },
+                        },
+                        {
+                            "status": "error",
+                            "sample": {
+                                "error": {
+                                    "message": "Capability is not supported in region"
+                                }
+                            },
+                        },
+                    ]
+                }
+            ]
+        )
+
+        self.assertEqual(analysis["errored_items"], 1)
+        self.assertEqual(analysis["errored_results"], 2)
+        self.assertEqual(analysis["clusters"]["permission_error"], 1)
+        self.assertEqual(analysis["clusters"]["unsupported_capability"], 1)
+
     def test_load_dataset_requires_expected_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "cases.jsonl"
@@ -49,11 +92,30 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertTrue(all(len(item["messages"]) >= 4 for item in items))
         self.assertTrue(all(item["retrieval_ground_truth"] for item in items))
         self.assertTrue(all(item["retrieved_documents"] for item in items))
+        self.assertTrue(all(item["agent_query"].strip() for item in items))
+        self.assertTrue(
+            all(
+                all(
+                    message_text in item["agent_query"]
+                    for message_text in (
+                        "".join(
+                            content["text"]
+                            for content in message["content"]
+                            if content["type"] == "text"
+                        )
+                        for message in item["messages"]
+                        if message["role"] == "user"
+                    )
+                )
+                for item in items
+            )
+        )
 
     def test_comprehensive_dataset_requires_response_to_match_conversation(self) -> None:
         item = {
             "case_id": "mismatch",
             "category": "test",
+            "agent_query": "hello",
             "query": "hello",
             "response": "different",
             "ground_truth": "answer",
@@ -122,6 +184,26 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertEqual(data_source["target"]["name"], "agent")
         self.assertEqual(data_source["target"]["version"], "7")
         self.assertEqual(data_source["source"]["id"], "dataset-id")
+
+    def test_agent_run_data_source_uses_standalone_query(self) -> None:
+        target = EvaluationTarget("model", "agent", "7")
+
+        data_source = build_run_data_source("dataset-id", target, "agent_query")
+
+        self.assertEqual(
+            data_source["input_messages"]["template"][0]["content"]["text"],
+            "{{item.agent_query}}",
+        )
+
+    def test_inline_agent_data_source_wraps_items(self) -> None:
+        target = EvaluationTarget("model", "agent", "7")
+        items = [{"query": "hello", "expected_behavior": "reply"}]
+
+        data_source = build_inline_run_data_source(items, target)
+
+        self.assertEqual(data_source["source"]["type"], "file_content")
+        self.assertEqual(data_source["source"]["content"], [{"item": items[0]}])
+        self.assertEqual(data_source["target"]["version"], "7")
 
     def test_schedule_runs_daily_at_selected_utc_hour(self) -> None:
         target = EvaluationTarget("model", "agent", "7")
@@ -264,6 +346,40 @@ class EvaluateFoundryTests(unittest.TestCase):
             )
         )
 
+    def test_comprehensive_agent_criteria_map_live_output(self) -> None:
+        criteria = build_comprehensive_agent_criteria("model", "3")
+        by_evaluator = {
+            criterion["evaluator_name"]: criterion for criterion in criteria
+        }
+
+        self.assertNotIn("builtin.retrieval", by_evaluator)
+        self.assertNotIn("builtin.document_retrieval", by_evaluator)
+        self.assertEqual(
+            by_evaluator["builtin.coherence"]["data_mapping"]["query"],
+            "{{item.agent_query}}",
+        )
+        self.assertEqual(
+            by_evaluator["builtin.coherence"]["data_mapping"]["response"],
+            "{{sample.output_text}}",
+        )
+        self.assertEqual(
+            by_evaluator["builtin.task_adherence"]["data_mapping"]["response"],
+            "{{sample.output_items}}",
+        )
+
+    def test_uk_south_filters_region_unsupported_evaluators(self) -> None:
+        criteria = build_comprehensive_turn_criteria("model", "3")
+
+        with patch("builtins.print"):
+            filtered = filter_criteria_for_region(criteria, "uksouth")
+
+        evaluators = {criterion["evaluator_name"] for criterion in filtered}
+        self.assertNotIn("builtin.indirect_attack", evaluators)
+        self.assertNotIn("builtin.groundedness_pro", evaluators)
+        self.assertNotIn("builtin.protected_material", evaluators)
+        self.assertIn("builtin.groundedness", evaluators)
+        self.assertIn("builtin.task_adherence", evaluators)
+
     def test_jsonl_run_data_source_uses_registered_dataset(self) -> None:
         self.assertEqual(
             build_jsonl_run_data_source("dataset-id"),
@@ -272,6 +388,62 @@ class EvaluateFoundryTests(unittest.TestCase):
                 "source": {"type": "file_id", "id": "dataset-id"},
             },
         )
+
+    def test_inline_jsonl_data_source_wraps_items(self) -> None:
+        items = [{"messages": [{"role": "user", "content": "hello"}]}]
+
+        self.assertEqual(
+            build_inline_jsonl_run_data_source(items),
+            {
+                "type": "jsonl",
+                "source": {
+                    "type": "file_content",
+                    "content": [{"item": items[0]}],
+                },
+            },
+        )
+
+    def test_versioned_evaluation_name_changes_with_mapping(self) -> None:
+        openai_client = MagicMock()
+        openai_client.evals.list.return_value = []
+        openai_client.evals.create.side_effect = [
+            SimpleNamespace(id="first"),
+            SimpleNamespace(id="second"),
+        ]
+        first = [
+            {
+                "name": "quality",
+                "evaluator_name": "builtin.coherence",
+                "data_mapping": {"response": "{{item.response}}"},
+            }
+        ]
+        second = [
+            {
+                "name": "quality",
+                "evaluator_name": "builtin.coherence",
+                "data_mapping": {"response": "{{sample.output_text}}"},
+            }
+        ]
+
+        find_or_create_evaluation(
+            openai_client,
+            "evaluation",
+            first,
+            version_definition=True,
+        )
+        find_or_create_evaluation(
+            openai_client,
+            "evaluation",
+            second,
+            version_definition=True,
+        )
+
+        names = [
+            call.kwargs["name"]
+            for call in openai_client.evals.create.call_args_list
+        ]
+        self.assertNotEqual(names[0], names[1])
+        self.assertTrue(all(name.startswith("evaluation-d") for name in names))
 
     def test_comprehensive_run_sets_conversation_evaluation_level(self) -> None:
         project_client = MagicMock()
@@ -305,6 +477,7 @@ class EvaluateFoundryTests(unittest.TestCase):
                 "scripts.evaluate_foundry.poll_run",
                 return_value=SimpleNamespace(status="completed"),
             ),
+            patch("scripts.evaluate_foundry.update_eval_metadata"),
             patch("scripts.evaluate_foundry.save_json"),
             patch("builtins.print"),
         ):
@@ -325,6 +498,113 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertEqual(
             conversation_call.kwargs["extra_body"],
             {"evaluation_level": "conversation"},
+        )
+
+    def test_parse_raw_agent_response_reads_completed_sse(self) -> None:
+        response = {
+            "status": "completed",
+            "output": [
+                {
+                    "content": [
+                        {"type": "output_text", "text": "captured response"}
+                    ]
+                }
+            ],
+        }
+        raw = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/event-stream\r\n\r\n"
+            "event: response.completed\n"
+            f"data: {json.dumps({'response': response})}\n\n"
+        )
+
+        self.assertEqual(parse_raw_agent_response(raw), "captured response")
+
+    def test_parse_raw_agent_response_rejects_failed_agent(self) -> None:
+        response = {
+            "status": "failed",
+            "error": {"code": "agent_error", "message": "boom"},
+        }
+        raw = (
+            "HTTP/1.1 200 OK\n"
+            "Content-Type: text/event-stream\n\n"
+            "event: response.completed\n"
+            f"data: {json.dumps({'response': response})}\n\n"
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "agent_error"):
+            parse_raw_agent_response(raw)
+
+    def test_parse_raw_agent_response_rejects_truncated_stream(self) -> None:
+        raw = (
+            "HTTP/1.1 200 OK\n"
+            "Content-Type: text/event-stream\n\n"
+            "event: response.output_text.delta\n"
+            'data: {"delta":"partial"}\n\n'
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "response.completed"):
+            parse_raw_agent_response(raw)
+
+    def test_replay_uses_fresh_conversation_and_replaces_assistant_turns(self) -> None:
+        item = {
+            "case_id": "multi-turn",
+            "messages": [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reviewed first"},
+                {"role": "user", "content": "second"},
+                {"role": "assistant", "content": "reviewed second"},
+            ],
+            "response": "reviewed second",
+        }
+        calls: list[tuple[str, bool]] = []
+
+        def invoke(
+            message: str,
+            target: EvaluationTarget,
+            environment_name: str,
+            *,
+            new_conversation: bool,
+        ) -> str:
+            self.assertEqual(target.agent_version, "7")
+            self.assertEqual(environment_name, "prod")
+            calls.append((message, new_conversation))
+            return f"live {message}"
+
+        replayed = replay_conversations(
+            [item],
+            EvaluationTarget("model", "agent", "7"),
+            "prod",
+            invoke,
+        )
+
+        self.assertEqual(calls, [("first", True), ("second", False)])
+        self.assertEqual(replayed[0]["response"], "live second")
+        self.assertEqual(replayed[0]["reviewed_response"], "reviewed second")
+        self.assertEqual(
+            [
+                message["content"]
+                for message in replayed[0]["messages"]
+                if message["role"] == "assistant"
+            ],
+            [
+                [{"type": "text", "text": "live first"}],
+                [{"type": "text", "text": "live second"}],
+            ],
+        )
+
+    def test_replay_dataset_version_pins_source_and_agent(self) -> None:
+        version = replay_dataset_version(
+            "2",
+            "abcdef1234567890",
+            "7/preview",
+            "20260822T010203Z",
+        )
+
+        self.assertEqual(
+            version,
+            "2-agent-7-preview-abcdef123456-20260822T010203Z",
         )
 
     def test_behavioral_evaluator_uses_foundry_placeholders(self) -> None:
