@@ -424,7 +424,7 @@ roles and Cosmos DB Built-in Data Contributor to the hosted agent identity.
 provides a local web interface and OpenAI-compatible API for development and
 debugging. It is a sample development tool and is not intended for production.
 
-Start DevUI:
+Start DevUI from the hosted-agent package:
 
 ```powershell
 python -m agents.hosted.devui
