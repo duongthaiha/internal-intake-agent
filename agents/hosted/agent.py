@@ -92,7 +92,7 @@ def build_agent() -> AgentComponents:
             credential=credential,
         ),
         name="maf-poc-agent",
-        description="A general-purpose assistant for planning and completing tasks.",
+        description="An Intake agent that helps with internal intake processes.",
         harness_instructions=(
             "Work methodically. For multi-step tasks, plan the work, track "
             "progress with todos, and verify the result before responding. "

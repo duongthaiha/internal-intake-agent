@@ -16,6 +16,10 @@ from azure.identity.aio import DefaultAzureCredential
 
 SUPPORTED_DOCUMENT_SUFFIXES = {".md", ".txt"}
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]+")
+SOURCE_PREFIX_PATTERN = re.compile(
+    r"^\[Source:\s*(?P<source>[^\]]+)\]\s*(?P<chunk>.*)$",
+    re.DOTALL,
+)
 RAG_TRACER = get_tracer(
     instrumenting_module_name="maf_poc.rag",
     instrumenting_library_version="1.0.0",
@@ -79,6 +83,32 @@ class KnowledgeChunk:
     source_link: str
     content: str
     term_counts: Counter[str]
+
+
+def _log_knowledge_chunks(results: list[KnowledgeChunk]) -> None:
+    for result in results:
+        logger.debug(
+            "In-memory RAG result source=%s link=%s chunk_id=%s chunk=%s",
+            result.source_name,
+            result.source_link,
+            result.chunk_id,
+            result.content,
+        )
+
+
+def _log_message_chunks(provider: str, results: list[Message]) -> None:
+    for index, result in enumerate(results, start=1):
+        text = result.text or ""
+        match = SOURCE_PREFIX_PATTERN.match(text)
+        source = match.group("source") if match else "<unknown>"
+        chunk = match.group("chunk") if match else text
+        logger.debug(
+            "%s RAG result %d source=%s chunk=%s",
+            provider,
+            index,
+            source,
+            chunk,
+        )
 
 
 class InMemoryRagContextProvider(ContextProvider):
@@ -185,6 +215,7 @@ class InMemoryRagContextProvider(ContextProvider):
                 len(results),
                 self.documents_path,
             )
+            _log_knowledge_chunks(results)
             span.set_attribute("rag.result_count", len(results))
             span.set_attribute("rag.context_injected", bool(results))
             if not results:
@@ -234,6 +265,7 @@ class ObservableAzureAISearchContextProvider(AzureAISearchContextProvider):
                 len(results),
                 self.index_name,
             )
+            _log_message_chunks("Azure AI Search semantic", results)
             span.set_attribute("rag.result_count", len(results))
             span.set_attribute("rag.context_injected", bool(results))
             return results
@@ -255,6 +287,7 @@ class ObservableAzureAISearchContextProvider(AzureAISearchContextProvider):
                 len(results),
                 self.index_name,
             )
+            _log_message_chunks("Azure AI Search agentic", results)
             span.set_attribute("rag.result_count", len(results))
             span.set_attribute("rag.context_injected", bool(results))
             return results

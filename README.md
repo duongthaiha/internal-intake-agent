@@ -548,11 +548,11 @@ python -m agents.hosted.agent --log-level DEBUG
 python -m agents.hosted.devui --reload --no-open --log-level DEBUG
 ```
 
-`DEBUG` also logs each RAG provider's retrieval result count. OpenTelemetry
-response traces remain independently controlled by `--tracing` and
-`--no-tracing`. Use `DEBUG` only for local troubleshooting because dependency
-logs can include prompts, retrieved context, model responses, and request
-metadata.
+`DEBUG` also logs each RAG provider's retrieval result count and every
+retrieved source and chunk. OpenTelemetry response traces remain independently
+controlled by `--tracing` and `--no-tracing`. Use `DEBUG` only for local
+troubleshooting because dependency logs can include prompts, retrieved context,
+model responses, and request metadata.
 
 ## Run
 
