@@ -1,0 +1,8 @@
+azure-cosmos>=4.6,<5
+azure-identity
+fastapi
+httpx
+jsonschema
+PyJWT[crypto]
+pydantic
+uvicorn[standard]

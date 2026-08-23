@@ -62,6 +62,45 @@
     "cosmosWorkloadPartitionKeyPath": {
       "value": "${AZURE_COSMOS_PARTITION_KEY_PATH=/session_id}"
     },
+    "intakeContainerAppsSubnetResourceId": {
+      "value": "${AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID=}"
+    },
+    "intakeApiImageName": {
+      "value": "${SERVICE_INTAKE_API_IMAGE_NAME=}"
+    },
+    "intakeContainerAppsSubnetPrefix": {
+      "value": "${AZURE_INTAKE_CONTAINER_APPS_SUBNET_PREFIX=192.168.4.0/23}"
+    },
+    "intakeCosmosDatabaseName": {
+      "value": "${INTAKE_COSMOS_DATABASE_NAME=intake}"
+    },
+    "intakeCosmosContainerName": {
+      "value": "${INTAKE_COSMOS_CONTAINER_NAME=intake-requests}"
+    },
+    "intakeEntraTenantId": {
+      "value": "${INTAKE_ENTRA_TENANT_ID}"
+    },
+    "intakeEntraAudience": {
+      "value": "${INTAKE_ENTRA_AUDIENCE}"
+    },
+    "intakeDelegatedWriteScope": {
+      "value": "${INTAKE_DELEGATED_WRITE_SCOPE=Intake.ReadWrite}"
+    },
+    "intakePrivilegedReadRole": {
+      "value": "${INTAKE_PRIVILEGED_READ_ROLE=Intake.Read.All}"
+    },
+    "intakePrivilegedWriteRole": {
+      "value": "${INTAKE_PRIVILEGED_WRITE_ROLE=Intake.ReadWrite.All}"
+    },
+    "intakeApiMinReplicas": {
+      "value": "${INTAKE_API_MIN_REPLICAS=1}"
+    },
+    "intakeApiMaxReplicas": {
+      "value": "${INTAKE_API_MAX_REPLICAS=5}"
+    },
+    "intakeApiLogLevel": {
+      "value": "${LOG_LEVEL=INFO}"
+    },
     "adminSubnetPrefix": {
       "value": "${AZURE_ADMIN_SUBNET_PREFIX=192.168.2.0/24}"
     },

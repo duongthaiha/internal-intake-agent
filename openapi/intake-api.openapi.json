@@ -1,0 +1,1623 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Intake Request API",
+    "description": "Creates and submits tenant-isolated innovation intake requests. Operation IDs are stable for Azure API Management MCP projection.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v1/intake-requests": {
+      "post": {
+        "tags": [
+          "intake requests"
+        ],
+        "summary": "Create an intake request draft",
+        "operationId": "create_intake_request",
+        "security": [
+          {
+            "MicrosoftEntraBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeRecordResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid intake request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistence request throttled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Persistence operation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "intake requests"
+        ],
+        "summary": "List authorized intake requests",
+        "operationId": "list_intake_requests",
+        "security": [
+          {
+            "MicrosoftEntraBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RequestStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "continuationToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Continuationtoken"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeRecordPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid intake request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistence request throttled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Persistence operation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/intake-requests/{request_id}": {
+      "get": {
+        "tags": [
+          "intake requests"
+        ],
+        "summary": "Get an intake request",
+        "operationId": "get_intake_request",
+        "security": [
+          {
+            "MicrosoftEntraBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeRecordResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid intake request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistence request throttled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Persistence operation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "intake requests"
+        ],
+        "summary": "Replace an intake request draft",
+        "operationId": "replace_intake_request",
+        "security": [
+          {
+            "MicrosoftEntraBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeRecordResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid intake request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistence request throttled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Persistence operation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/intake-requests/{request_id}/submit": {
+      "post": {
+        "tags": [
+          "intake requests"
+        ],
+        "summary": "Submit an intake request",
+        "operationId": "submit_intake_request",
+        "security": [
+          {
+            "MicrosoftEntraBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeRecordResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid intake request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request state conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "ETag precondition failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Persistence request throttled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Persistence operation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IntakeRecordPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IntakeRecordResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "continuationToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuationtoken"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "IntakeRecordPage"
+      },
+      "IntakeRecordResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RequestStatus"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "title": "Schemaversion"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "intake": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Intake"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "schemaVersion",
+          "createdAt",
+          "updatedAt",
+          "intake"
+        ],
+        "title": "IntakeRecordResponse"
+      },
+      "RequestStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "submitted"
+        ],
+        "title": "RequestStatus"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "ProblemDetail": {
+        "properties": {
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Instance"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "ProblemDetail",
+        "type": "object"
+      },
+      "IntakeRequest": {
+        "title": "Innovation and AI use case intake request",
+        "description": "Captures the core idea and optional discovery details for an innovation or AI use case request.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "problemOpportunity",
+          "proposedIdea",
+          "expectedOutcome",
+          "requester"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "A short, recognizable name for the request.",
+            "minLength": 3,
+            "maxLength": 150
+          },
+          "problemOpportunity": {
+            "type": "string",
+            "description": "The current problem, unmet need, or opportunity and why it matters.",
+            "minLength": 20,
+            "maxLength": 5000
+          },
+          "proposedIdea": {
+            "type": "string",
+            "description": "The proposed innovation or AI-enabled approach.",
+            "minLength": 20,
+            "maxLength": 5000
+          },
+          "expectedOutcome": {
+            "type": "string",
+            "description": "The desired result and the change expected if the idea succeeds.",
+            "minLength": 10,
+            "maxLength": 3000
+          },
+          "requester": {
+            "$ref": "#/components/schemas/IntakeRequest_requiredPerson",
+            "description": "The person submitting the request."
+          },
+          "businessContext": {
+            "$ref": "#/components/schemas/IntakeRequest_businessContext"
+          },
+          "targetUsers": {
+            "$ref": "#/components/schemas/IntakeRequest_targetUsers"
+          },
+          "valueAndSuccess": {
+            "$ref": "#/components/schemas/IntakeRequest_valueAndSuccess"
+          },
+          "aiConsiderations": {
+            "$ref": "#/components/schemas/IntakeRequest_aiConsiderations"
+          },
+          "dataConsiderations": {
+            "$ref": "#/components/schemas/IntakeRequest_dataConsiderations"
+          },
+          "dependencies": {
+            "type": "array",
+            "description": "Systems, teams, initiatives, approvals, or other dependencies.",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_dependency"
+            },
+            "maxItems": 50,
+            "uniqueItems": true
+          },
+          "deliveryConsiderations": {
+            "$ref": "#/components/schemas/IntakeRequest_deliveryConsiderations"
+          },
+          "risks": {
+            "type": "array",
+            "description": "Known delivery, adoption, operational, legal, or technical risks.",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_risk"
+            },
+            "maxItems": 50
+          },
+          "responsibleAI": {
+            "$ref": "#/components/schemas/IntakeRequest_responsibleAI"
+          },
+          "securityAndPrivacy": {
+            "$ref": "#/components/schemas/IntakeRequest_securityAndPrivacy"
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/IntakeRequest_ownership"
+          },
+          "supportingLinks": {
+            "type": "array",
+            "description": "Links to research, process documents, prototypes, or other evidence.",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_supportingLink"
+            },
+            "maxItems": 20
+          },
+          "additionalNotes": {
+            "type": "string",
+            "description": "Relevant information not covered by the structured fields.",
+            "maxLength": 5000
+          }
+        }
+      },
+      "IntakeRequest_optionalPerson": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "team": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "organisation": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "IntakeRequest_requiredPerson": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "team": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "organisation": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "IntakeRequest_businessContext": {
+        "type": "object",
+        "description": "Business background that helps assess relevance and urgency.",
+        "additionalProperties": false,
+        "properties": {
+          "businessArea": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "strategicAlignment": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "currentProcess": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "evidenceOfNeed": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "desiredTimeline": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "IntakeRequest_targetUsers": {
+        "type": "object",
+        "description": "People who experience the problem or would use or be affected by the solution.",
+        "additionalProperties": false,
+        "properties": {
+          "primaryUsers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20,
+            "uniqueItems": true
+          },
+          "otherAffectedGroups": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 20,
+            "uniqueItems": true
+          },
+          "estimatedUserCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "userNeeds": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "accessibilityNeeds": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "IntakeRequest_valueAndSuccess": {
+        "type": "object",
+        "description": "Expected value and evidence that would demonstrate success.",
+        "additionalProperties": false,
+        "properties": {
+          "expectedBenefits": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 20,
+            "uniqueItems": true
+          },
+          "successMeasures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_successMeasure"
+            },
+            "maxItems": 20
+          },
+          "costOfDoingNothing": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 20,
+            "uniqueItems": true
+          }
+        }
+      },
+      "IntakeRequest_successMeasure": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "measure"
+        ],
+        "properties": {
+          "measure": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "baseline": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "timeframe": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "IntakeRequest_aiConsiderations": {
+        "type": "object",
+        "description": "How AI may contribute and where people remain involved.",
+        "additionalProperties": false,
+        "properties": {
+          "whyAI": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "tasksForAI": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "humanRole": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "acceptableFailure": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "nonAIAlternative": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "IntakeRequest_dataConsiderations": {
+        "type": "object",
+        "description": "Data needed to design, operate, and assess the idea.",
+        "additionalProperties": false,
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_dataSource"
+            },
+            "maxItems": 30
+          },
+          "containsPersonalData": {
+            "type": "boolean"
+          },
+          "containsSensitiveData": {
+            "type": "boolean"
+          },
+          "dataQuality": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "dataResidency": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "retentionRequirements": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      },
+      "IntakeRequest_dataSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "owner": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "classification": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "accessStatus": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "IntakeRequest_dependency": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1500
+          },
+          "owner": {
+            "type": "string",
+            "maxLength": 300
+          }
+        }
+      },
+      "IntakeRequest_deliveryConsiderations": {
+        "type": "object",
+        "description": "Known constraints and readiness information for discovery or delivery.",
+        "additionalProperties": false,
+        "properties": {
+          "workCompleted": {
+            "type": "string",
+            "maxLength": 3000
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "requiredSkills": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "budgetContext": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "targetMilestone": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "IntakeRequest_risk": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "description"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          },
+          "impact": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "mitigation": {
+            "type": "string",
+            "maxLength": 1500
+          }
+        }
+      },
+      "IntakeRequest_responsibleAI": {
+        "type": "object",
+        "description": "Early responsible-AI considerations; not a substitute for formal review.",
+        "additionalProperties": false,
+        "properties": {
+          "affectedStakeholders": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "fairnessConsiderations": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "transparencyNeeds": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "humanOversight": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "potentialHarms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "harmMitigations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          }
+        }
+      },
+      "IntakeRequest_securityAndPrivacy": {
+        "type": "object",
+        "description": "Known security, privacy, compliance, and regulatory considerations.",
+        "additionalProperties": false,
+        "properties": {
+          "securityRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "privacyRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "regulatoryRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxItems": 30,
+            "uniqueItems": true
+          },
+          "reviewNotes": {
+            "type": "string",
+            "maxLength": 3000
+          }
+        }
+      },
+      "IntakeRequest_ownership": {
+        "type": "object",
+        "description": "People accountable for sponsoring, shaping, or operating the idea.",
+        "additionalProperties": false,
+        "properties": {
+          "businessOwner": {
+            "$ref": "#/components/schemas/IntakeRequest_optionalPerson"
+          },
+          "technicalOwner": {
+            "$ref": "#/components/schemas/IntakeRequest_optionalPerson"
+          },
+          "executiveSponsor": {
+            "$ref": "#/components/schemas/IntakeRequest_optionalPerson"
+          },
+          "subjectMatterExperts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeRequest_optionalPerson"
+            },
+            "maxItems": 20
+          }
+        }
+      },
+      "IntakeRequest_supportingLink": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label",
+          "url"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "MicrosoftEntraBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Microsoft Entra ID access token."
+      }
+    }
+  }
+}

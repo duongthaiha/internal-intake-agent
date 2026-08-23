@@ -209,6 +209,17 @@ var normalizedDnsZonesSubscriptionId = empty(trimmedDnsZonesSubscriptionId)
       ? trim(split(trimmedDnsZonesSubscriptionId, '/')[2])
       : trimmedDnsZonesSubscriptionId)
 var resolvedDnsZonesSubscriptionId = empty(normalizedDnsZonesSubscriptionId) ? subscription().subscriptionId : normalizedDnsZonesSubscriptionId
+var cosmosPrivateDnsZoneName = 'privatelink.documents.azure.com'
+var cosmosPrivateDnsZoneResourceGroupName = empty(existingDnsZones[cosmosPrivateDnsZoneName])
+  ? resourceGroup().name
+  : existingDnsZones[cosmosPrivateDnsZoneName]
+var cosmosPrivateDnsZoneId = resourceId(
+  resolvedDnsZonesSubscriptionId,
+  cosmosPrivateDnsZoneResourceGroupName,
+  'Microsoft.Network/privateDnsZones',
+  cosmosPrivateDnsZoneName
+)
+var intakeCosmosAccountName = take(toLower('${aiServices}${uniqueSuffix}intake'), 44)
 
 @description('The name of the project capability host to be created')
 param projectCapHost string = 'caphostproj'
@@ -231,6 +242,50 @@ param cosmosWorkloadContainerName string = 'chat-history'
 
 @description('Partition key path for the chat-history container.')
 param cosmosWorkloadPartitionKeyPath string = '/session_id'
+
+@description('Container image for the intake API. azd supplies this value after building the intake-api service.')
+param intakeApiImageName string = ''
+
+@description('Name of the dedicated intake Container Apps infrastructure subnet.')
+param intakeContainerAppsSubnetName string = 'intake-container-apps-subnet'
+
+@description('Address prefix for the dedicated intake Container Apps infrastructure subnet. It must not overlap any existing subnet.')
+param intakeContainerAppsSubnetPrefix string = '192.168.4.0/23'
+
+@description('Optional existing dedicated Container Apps infrastructure subnet resource ID. Supply this when the deployment must not modify an existing VNet.')
+param intakeContainerAppsSubnetResourceId string = ''
+
+@description('Name of the dedicated intake Cosmos DB SQL database.')
+param intakeCosmosDatabaseName string = 'intake'
+
+@description('Name of the dedicated intake Cosmos DB SQL container.')
+param intakeCosmosContainerName string = 'intake-requests'
+
+@description('Microsoft Entra tenant accepted by the intake API.')
+param intakeEntraTenantId string = tenant().tenantId
+
+@description('Microsoft Entra application audience accepted by the intake API.')
+param intakeEntraAudience string
+
+@description('Application role required for privileged intake reads.')
+param intakePrivilegedReadRole string = 'Intake.Read.All'
+
+@description('Application role required for privileged intake writes.')
+param intakePrivilegedWriteRole string = 'Intake.ReadWrite.All'
+
+@description('Delegated scope required for requester intake writes.')
+param intakeDelegatedWriteScope string = 'Intake.ReadWrite'
+
+@description('Minimum number of intake API replicas.')
+@minValue(0)
+param intakeApiMinReplicas int = 1
+
+@description('Maximum number of intake API replicas.')
+@minValue(1)
+param intakeApiMaxReplicas int = 5
+
+@description('Log level supplied to the intake API.')
+param intakeApiLogLevel string = 'INFO'
 
 @description('Name of the admin subnet used for private admin access (Bastion + admin VM).')
 param adminSubnetName string = 'admin-subnet'
@@ -608,6 +663,72 @@ module workloadCosmosDatabase 'modules-local/workload-cosmos-database.bicep' = {
   ]
 }
 
+// Dedicated network and data plane for the intake API. These resources are kept
+// separate from both the Foundry agent subnet and its chat-history Cosmos account.
+module intakeNetwork 'modules-local/intake-network.bicep' = if (empty(intakeContainerAppsSubnetResourceId)) {
+  name: 'intake-network-${uniqueSuffix}-deployment'
+  scope: resourceGroup(vnetSubscriptionId, vnetResourceGroupName)
+  params: {
+    vnetName: vnet.outputs.virtualNetworkName
+    subnetName: intakeContainerAppsSubnetName
+    subnetPrefix: intakeContainerAppsSubnetPrefix
+  }
+}
+
+module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
+  name: 'intake-cosmos-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    accountName: intakeCosmosAccountName
+    databaseName: intakeCosmosDatabaseName
+    containerName: intakeCosmosContainerName
+    privateEndpointSubnetId: vnet.outputs.peSubnetId
+    cosmosPrivateDnsZoneId: cosmosPrivateDnsZoneId
+  }
+  dependsOn: [
+    privateEndpointAndDNS
+  ]
+}
+
+module intakeContainerApp 'modules-local/intake-container-app.bicep' = {
+  name: 'intake-container-app-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    imageName: intakeApiImageName
+    infrastructureSubnetId: !empty(intakeContainerAppsSubnetResourceId)
+      ? intakeContainerAppsSubnetResourceId
+      : intakeNetwork!.outputs.subnetId
+    useContainerRegistry: enableContainerRegistry
+    containerRegistryName: enableContainerRegistry ? acr!.outputs.acrName : ''
+    containerRegistryLoginServer: enableContainerRegistry ? acr!.outputs.acrLoginServer : ''
+    cosmosEndpoint: intakeCosmos.outputs.endpoint
+    cosmosDatabaseName: intakeCosmos.outputs.databaseName
+    cosmosContainerName: intakeCosmos.outputs.containerName
+    entraTenantId: intakeEntraTenantId
+    entraAudience: intakeEntraAudience
+    privilegedReadRole: intakePrivilegedReadRole
+    privilegedWriteRole: intakePrivilegedWriteRole
+    delegatedWriteScope: intakeDelegatedWriteScope
+    applicationInsightsConnectionString: applicationInsights.outputs.appInsightsConnectionString
+    logLevel: intakeApiLogLevel
+    minReplicas: intakeApiMinReplicas
+    maxReplicas: intakeApiMaxReplicas
+  }
+  dependsOn: [
+    monitorPrivateLink
+  ]
+}
+
+module intakeCosmosRole 'modules-local/intake-cosmos-role.bicep' = {
+  name: 'intake-cosmos-role-${uniqueSuffix}-deployment'
+  params: {
+    accountName: intakeCosmos.outputs.accountName
+    databaseName: intakeCosmos.outputs.databaseName
+    containerName: intakeCosmos.outputs.containerName
+    principalId: intakeContainerApp.outputs.principalId
+  }
+}
+
 // Private admin access: admin subnet + AzureBastionSubnet added to the VNet
 // after its initial creation (non-racing, see modules-local/admin-access.bicep),
 // a Standard Azure Bastion host with a Standard static public IP, and a Windows
@@ -649,8 +770,30 @@ output AZURE_SEARCH_INDEX_NAME string = searchIndexName
 
 output AZURE_STORAGE_ACCOUNT_NAME string = aiDependencies.outputs.azureStorageName
 
-output AZURE_CONTAINER_REGISTRY_NAME string = enableContainerRegistry ? acr.outputs.acrName : ''
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableContainerRegistry ? acr.outputs.acrLoginServer : ''
+output AZURE_CONTAINER_REGISTRY_NAME string = enableContainerRegistry ? acr!.outputs.acrName : ''
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableContainerRegistry ? acr!.outputs.acrLoginServer : ''
+
+output INTAKE_COSMOS_ACCOUNT_NAME string = intakeCosmos.outputs.accountName
+output INTAKE_COSMOS_ENDPOINT string = intakeCosmos.outputs.endpoint
+output INTAKE_COSMOS_DATABASE_NAME string = intakeCosmos.outputs.databaseName
+output INTAKE_COSMOS_CONTAINER_NAME string = intakeCosmos.outputs.containerName
+output INTAKE_ENTRA_TENANT_ID string = intakeEntraTenantId
+output INTAKE_ENTRA_AUDIENCE string = intakeEntraAudience
+output INTAKE_PRIVILEGED_READ_ROLE string = intakePrivilegedReadRole
+output INTAKE_PRIVILEGED_WRITE_ROLE string = intakePrivilegedWriteRole
+output INTAKE_DELEGATED_WRITE_SCOPE string = intakeDelegatedWriteScope
+
+output SERVICE_INTAKE_API_IMAGE_NAME string = intakeContainerApp.outputs.imageName
+output SERVICE_INTAKE_API_NAME string = intakeContainerApp.outputs.appName
+output SERVICE_INTAKE_API_URI string = intakeContainerApp.outputs.uri
+output SERVICE_INTAKE_API_ENDPOINTS array = [
+  intakeContainerApp.outputs.uri
+]
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = intakeContainerApp.outputs.environmentName
+output AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID string = !empty(intakeContainerAppsSubnetResourceId)
+  ? intakeContainerAppsSubnetResourceId
+  : intakeNetwork!.outputs.subnetId
+output INTAKE_COSMOS_ROLE_ASSIGNMENT_ID string = intakeCosmosRole.outputs.roleAssignmentId
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.appInsightsConnectionString
 output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsights.outputs.appInsightsId

@@ -42,6 +42,8 @@ param(
     [string]$ModelSkuName = "GlobalStandard",
     [int]$ModelCapacity = 250,
 
+    [string]$IntakeEntraAudience = $env:INTAKE_ENTRA_AUDIENCE,
+
     [string]$AllowedClientIp,
     [string]$IpDetectionEndpoint = $env:PUBLIC_IP_ECHO_ENDPOINT,
 
@@ -62,6 +64,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:AZD_NON_INTERACTIVE = "true"
+
+if ([string]::IsNullOrWhiteSpace($IntakeEntraAudience)) {
+    throw "Set INTAKE_ENTRA_AUDIENCE or pass -IntakeEntraAudience with the Microsoft Entra application audience for the intake API."
+}
 
 # The destructive delete path is only ever allowed to target this exact,
 # well-known resource group name, no matter what -OldResourceGroup is set to.
@@ -461,6 +467,7 @@ function Invoke-AzdProvisionPreview {
 
 Assert-Command "az"
 Assert-Command "azd"
+Assert-Command "docker"
 
 Invoke-Checked { az account set --subscription $SubscriptionId } `
     "Unable to select Azure subscription '$SubscriptionId'."
@@ -553,7 +560,10 @@ try {
         AZURE_AI_MODEL_SKU_NAME      = $ModelSkuName
         AZURE_AI_MODEL_CAPACITY      = $ModelCapacity
         AZURE_ALLOWED_CLIENT_IP_CIDR = $allowedClientIpCidr
+        AZURE_ACR_DEVELOPER_IP_CIDR  = $allowedClientIpCidr
         AZURE_ADMIN_VM_USERNAME      = $AdminVmUsername
+        INTAKE_ENTRA_TENANT_ID       = $TenantId
+        INTAKE_ENTRA_AUDIENCE        = $IntakeEntraAudience
         DEPENDENCY_STARTUP_CHECKS    = "false"
     }
     foreach ($setting in $settings.GetEnumerator()) {
