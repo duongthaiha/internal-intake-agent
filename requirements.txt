@@ -5,8 +5,14 @@ agent-framework-azure-ai-search==1.0.0b260730
 agent-framework-devui==1.0.0b260730
 azure-ai-projects==2.3.0
 azure-search-documents
-azure-cosmos
+azure-cosmos>=4.6,<5
 azure-identity
+fastapi
+httpx
+jsonschema
+PyJWT[crypto]
+pydantic
 python-dotenv
 PyYAML==6.0.2
+uvicorn[standard]
 watchfiles

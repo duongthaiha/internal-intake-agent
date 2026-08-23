@@ -35,16 +35,96 @@ and supporting links can be added as discovery progresses. A request type is
 intentionally not part of the contract. Unknown properties are rejected to
 surface misspelled or unsupported fields.
 
-This repository currently provides the contract, example, and guidance only.
-The agent does not yet generate, persist, or validate intake records at runtime.
+The standalone intake API validates this contract and stores its records
+separately from agent conversation history. The agent does not yet call the API
+or submit records automatically.
+
+## Intake persistence API
+
+`intake_api` is a FastAPI service with a versioned, self-contained OpenAPI
+contract at
+[`openapi/intake-api.openapi.json`](openapi/intake-api.openapi.json). Regenerate
+the checked-in contract after changing routes or schemas:
+
+```powershell
+python -m scripts.export_intake_openapi
+```
+
+The service exposes these stable operations:
+
+| Method and path | OpenAPI operation | Behavior |
+| --- | --- | --- |
+| `POST /v1/intake-requests` | `create_intake_request` | Create a mutable draft |
+| `GET /v1/intake-requests/{request_id}` | `get_intake_request` | Read an authorized request |
+| `GET /v1/intake-requests` | `list_intake_requests` | List the caller's requests, or the tenant for privileged callers |
+| `PUT /v1/intake-requests/{request_id}` | `replace_intake_request` | Replace a draft using `If-Match` |
+| `POST /v1/intake-requests/{request_id}/submit` | `submit_intake_request` | Submit a draft using `If-Match` |
+
+Create and update bodies use the intake JSON Schema directly. Responses add the
+request ID, status, schema version, and audit timestamps. Create, read, update,
+and submit responses include an `ETag`; mutating an existing record requires
+that value in `If-Match`. Missing and stale preconditions return `428` and
+`412`, respectively. Submitted requests are immutable, and repeated submission
+is idempotent. Errors use `application/problem+json`.
+
+Every route requires a Microsoft Entra ID access token. Configure one app
+registration for the API with:
+
+- Delegated scope `Intake.ReadWrite` for requesters
+- Application role `Intake.Read.All` for tenant-wide read access
+- Application role `Intake.ReadWrite.All` for tenant-wide read/write access
+
+The API validates the token signature, fixed tenant issuer, audience, lifetime,
+scope, and roles. It derives tenant and creator IDs from token claims; clients
+cannot select them in request bodies. Requesters can access only their own
+records. Privileged roles remain tenant-scoped.
+
+The deployed service uses its managed identity to access a dedicated Cosmos DB
+account. The account disables local authentication and public networking. Its
+`intake/intake-requests` container uses the hierarchical partition key
+`/tenantId`, `/id`; API updates use Cosmos `_etag` optimistic concurrency. The
+account is separate from the Foundry capability-host and chat-history Cosmos
+account. Composite indexes cover owner/status lists ordered by update time. TTL
+is intentionally disabled because the correct retention period is an
+organisation policy decision; the `retentionRequirements` intake field records
+context but does not delete data automatically.
+
+To run the API locally, use a host with private connectivity to the deployed
+intake Cosmos private endpoint, sign in with an identity that has the Cosmos DB
+data role, populate the `INTAKE_*` settings shown in `.env.example`, and run:
+
+```powershell
+uvicorn intake_api.app:app --host 127.0.0.1 --port 8000
+```
+
+Liveness is available at `/health/live`; `/health/ready` also checks Cosmos
+access. Neither endpoint returns configuration or intake data.
+
+### API Management MCP projection
+
+Azure API Management can expose selected operations of a managed REST API as
+remote MCP tools, so this service does not implement a second MCP protocol
+server. Import `openapi/intake-api.openapi.json`, select the five intake
+operations, and use APIM's Streamable HTTP MCP endpoint. Configure APIM products,
+authorization, quotas, and policies for callers. Configure APIM's managed
+identity to request a token for `INTAKE_ENTRA_AUDIENCE` and assign only the
+required intake application role.
+
+REST-to-MCP projection currently exposes tools, not MCP resources or prompts,
+and is not supported in APIM workspaces. Avoid APIM policies or global
+diagnostics that buffer or log MCP response bodies. See [Expose REST API in API
+Management as an MCP server](https://learn.microsoft.com/azure/api-management/export-rest-mcp-server)
+and [MCP server support in API Management](https://learn.microsoft.com/azure/api-management/mcp-server-overview).
 
 ## Prerequisites
 
 - Python 3.11 or later
 - Azure CLI
 - Azure Developer CLI (`azd`)
+- Docker Desktop or another Docker engine for the intake API image
 - Permission to create resources and role assignments in the target subscription
 - Available `gpt-5.6-sol` `GlobalStandard` quota in `uksouth`
+- A Microsoft Entra app registration for the intake API audience, scope, and roles
 
 The agent uses `DefaultAzureCredential` for Foundry and Cosmos DB, so no API
 keys are stored locally. The identity needs Cosmos DB data-plane permissions,
@@ -70,6 +150,7 @@ network-secured template, adapted for this workload. It creates
 - A new Foundry account and project injected into a dedicated BYO VNet
 - A delegated `/24` agent subnet and private-endpoint subnet
 - Private Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
+- A Container Apps intake API and separate private Cosmos DB account
 - Private endpoints and linked Private DNS zones
 - A `gpt-5.6-sol` model deployment
 - Optional Azure Bastion and private Windows Server administration VM
@@ -87,7 +168,10 @@ affect Foundry BYO network injection or hosted-agent operation.
 Run preflight without provisioning or deleting resources:
 
 ```powershell
-.\scripts\deploy_byo.ps1 -PreflightOnly -AllowedClientIp "<your-public-ipv4>"
+.\scripts\deploy_byo.ps1 `
+  -PreflightOnly `
+  -AllowedClientIp "<your-public-ipv4>" `
+  -IntakeEntraAudience "api://<intake-api-application-id>"
 ```
 
 The script can query an approved Microsoft or enterprise IP-echo endpoint passed
@@ -102,14 +186,27 @@ The destructive switch is guarded so it can delete only
 ```powershell
 .\scripts\deploy_byo.ps1 `
   -AllowedClientIp "<your-public-ipv4>" `
+  -IntakeEntraAudience "api://<intake-api-application-id>" `
   -DeleteOldResourceGroup
 ```
 
 The workflow builds and previews the Bicep, removes the old stack, waits for
 model quota, provisions the BYO-VNet stack, publishes the hosted agent, assigns
 its Cosmos DB and Search roles, republishes with dependency checks enabled, and
-runs a grounded invocation. The new Cosmos history container starts empty; the
-hosted agent rebuilds the Search index from `data/knowledge`.
+runs a grounded invocation. It also builds and deploys the intake API container.
+The new Cosmos history and intake containers start empty; the hosted agent
+rebuilds the Search index from `data/knowledge`.
+
+The intake image is built locally because the ACR data plane is network
+restricted. During deployment the workflow applies the same narrow client CIDR
+to ACR, pushes the image, and leaves the registry private-endpoint enabled. Run
+the workflow from that allowlisted address or from a host with private VNet
+connectivity; it never enables unrestricted registry access.
+
+The separate serverless Cosmos account, Container Apps environment, and running
+replicas add Azure cost independently of the hosted agent. The default API scale
+keeps one replica warm and permits five; lower `intakeApiMinReplicas` only after
+accepting cold starts.
 
 The one-time administration VM password is generated when omitted and stored in
 the local azd environment without being printed. Supply a secure value instead:
@@ -118,6 +215,7 @@ the local azd environment without being printed. Supply a secure value instead:
 $password = Read-Host "Admin VM recovery password" -AsSecureString
 .\scripts\deploy_byo.ps1 `
   -AllowedClientIp "<your-public-ipv4>" `
+  -IntakeEntraAudience "api://<intake-api-application-id>" `
   -AdminVmPassword $password `
   -DeleteOldResourceGroup
 ```
@@ -172,6 +270,20 @@ AZURE_COSMOS_DATABASE_NAME=agent-framework
 AZURE_COSMOS_CONTAINER_NAME=chat-history
 AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
 AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge
+INTAKE_COSMOS_ENDPOINT=https://<intake-cosmos-account>.documents.azure.com:443/
+INTAKE_COSMOS_DATABASE_NAME=intake
+INTAKE_COSMOS_CONTAINER_NAME=intake-requests
+INTAKE_ENTRA_TENANT_ID=<tenant-guid>
+INTAKE_ENTRA_AUDIENCE=api://<intake-api-application-id>
+INTAKE_ENTRA_ISSUER=https://login.microsoftonline.com/<tenant-guid>/v2.0
+INTAKE_DELEGATED_WRITE_SCOPE=Intake.ReadWrite
+INTAKE_PRIVILEGED_READ_ROLE=Intake.Read.All
+INTAKE_PRIVILEGED_WRITE_ROLE=Intake.ReadWrite.All
+INTAKE_JWKS_CACHE_SECONDS=3600
+INTAKE_API_MIN_REPLICAS=1
+INTAKE_API_MAX_REPLICAS=5
+AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID=
+AZURE_INTAKE_CONTAINER_APPS_SUBNET_PREFIX=192.168.4.0/23
 ```
 
 `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `AZURE_TENANT_ID`,
@@ -181,6 +293,28 @@ existing hosted-agent version; there is no default version because evaluating a
 stale deployment would give misleading results. These values are deployment
 identifiers, not secrets. The Application Insights connection string is
 sensitive and must remain in the azd environment or local process environment.
+
+The intake settings are required only for the intake API. The endpoint,
+database, container, tenant, audience, issuer, scope, and role names are
+non-secret deployment configuration. `INTAKE_ENTRA_ISSUER` defaults to the
+tenant-specific v2 issuer, role/scope names default to the values above, and
+`INTAKE_JWKS_CACHE_SECONDS` defaults to `3600`. Do not use a client secret or
+Cosmos key; local and deployed access use Azure identity.
+
+`INTAKE_API_MIN_REPLICAS` and `INTAKE_API_MAX_REPLICAS` are non-sensitive
+deployment-only scale limits and default to `1` and `5`.
+`AZURE_INTAKE_CONTAINER_APPS_SUBNET_PREFIX` is the non-sensitive CIDR used only
+when creating the dedicated subnet and defaults to `192.168.4.0/23`.
+`AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID` is an optional, non-sensitive existing
+subnet resource ID; leave it empty for a new VNet and set it when existing VNet
+subnets must not be changed.
+
+`scripts/deploy_byo.ps1` requires `-IntakeEntraAudience` or the
+`INTAKE_ENTRA_AUDIENCE` process environment variable and records the audience
+and deployment tenant in the selected azd environment. When reusing a VNet that
+must not be modified, set `AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID` to an existing
+dedicated subnet delegated to `Microsoft.App/environments`; otherwise the
+template creates `192.168.4.0/23` by default.
 
 The Cosmos container uses `/session_id` as its partition key.
 

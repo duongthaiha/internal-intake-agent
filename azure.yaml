@@ -2,6 +2,14 @@
 
 name: maf-poc
 services:
+    intake-api:
+        project: .
+        host: containerapp
+        language: python
+        docker:
+            path: ./Dockerfile.intake
+            context: .
+            remoteBuild: false
     maf-poc-agent:
         project: .
         host: azure.ai.agent
