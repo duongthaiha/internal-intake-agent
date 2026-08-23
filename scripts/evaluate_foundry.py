@@ -104,11 +104,34 @@ def load_project_settings() -> ProjectSettings:
     )
 
 
-def load_evaluation_target() -> EvaluationTarget:
+def load_evaluation_target(
+    agent_name: str | None = None,
+    agent_version: str | None = None,
+) -> EvaluationTarget:
+    resolved_name = (
+        agent_name
+        or os.getenv("EVALUATION_AGENT_NAME")
+        or os.getenv("AGENT_MAF_POC_AGENT_NAME")
+    )
+    resolved_version = (
+        agent_version
+        or os.getenv("EVALUATION_AGENT_VERSION")
+        or os.getenv("AGENT_MAF_POC_AGENT_VERSION")
+    )
+    if not resolved_name:
+        raise RuntimeError(
+            "Set EVALUATION_AGENT_NAME, AGENT_MAF_POC_AGENT_NAME, or pass "
+            "--agent-name."
+        )
+    if not resolved_version:
+        raise RuntimeError(
+            "Set EVALUATION_AGENT_VERSION, AGENT_MAF_POC_AGENT_VERSION, or pass "
+            "--agent-version."
+        )
     return EvaluationTarget(
         model_deployment_name=required_setting("AZURE_AI_MODEL_DEPLOYMENT_NAME"),
-        agent_name=required_setting("AGENT_MAF_POC_AGENT_NAME"),
-        agent_version=required_setting("AGENT_MAF_POC_AGENT_VERSION"),
+        agent_name=resolved_name,
+        agent_version=resolved_version,
     )
 
 
@@ -1727,6 +1750,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-version")
     parser.add_argument("--evaluation-name")
     parser.add_argument("--run-name")
+    parser.add_argument(
+        "--agent-name",
+        help=(
+            "Foundry agent name. Defaults to EVALUATION_AGENT_NAME, then the "
+            "legacy AGENT_MAF_POC_AGENT_NAME."
+        ),
+    )
+    parser.add_argument(
+        "--agent-version",
+        help=(
+            "Immutable Foundry agent version. Defaults to "
+            "EVALUATION_AGENT_VERSION, then the legacy "
+            "AGENT_MAF_POC_AGENT_VERSION."
+        ),
+    )
     parser.add_argument("--results-root", type=Path, default=DEFAULT_RESULTS_ROOT)
     parser.add_argument(
         "--inline-data",
@@ -1832,10 +1870,13 @@ def main() -> None:
                     project_client,
                     openai_client,
                     args,
-                    load_evaluation_target(),
+                    load_evaluation_target(args.agent_name, args.agent_version),
                 )
             elif args.suite == "comprehensive-agent":
-                target = load_evaluation_target()
+                target = load_evaluation_target(
+                    args.agent_name,
+                    args.agent_version,
+                )
                 if args.action == "schedule":
                     upsert_comprehensive_agent_schedule(
                         project_client,
@@ -1846,7 +1887,10 @@ def main() -> None:
                 else:
                     show_schedule(project_client, args)
             else:
-                target = load_evaluation_target()
+                target = load_evaluation_target(
+                    args.agent_name,
+                    args.agent_version,
+                )
                 if args.action == "schedule":
                     upsert_schedule(project_client, openai_client, args, target)
                 else:

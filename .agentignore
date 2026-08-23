@@ -41,3 +41,16 @@ node_modules/
 # Docker (not used in code deploy)
 Dockerfile
 .dockerignore
+
+# Workloads and assets not used by the hosted agent
+agents/prompt/
+intake_api/
+tests/
+evals/
+infra/
+openapi/
+schemas/
+examples/
+scripts/
+Dockerfile.intake
+requirements.intake.txt

@@ -176,6 +176,18 @@ class EvaluateFoundryTests(unittest.TestCase):
             ):
                 load_evaluation_target()
 
+    def test_target_accepts_generic_prompt_agent_environment(self) -> None:
+        environment = {
+            "AZURE_AI_MODEL_DEPLOYMENT_NAME": "model",
+            "EVALUATION_AGENT_NAME": "prompt-agent",
+            "EVALUATION_AGENT_VERSION": "3",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            target = load_evaluation_target()
+
+        self.assertEqual(target.agent_name, "prompt-agent")
+        self.assertEqual(target.agent_version, "3")
+
     def test_run_data_source_targets_exact_agent_version(self) -> None:
         target = EvaluationTarget("model", "agent", "7")
 

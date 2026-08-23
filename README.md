@@ -14,6 +14,23 @@ Retrieval-augmented generation is configurable:
 - `RAG_PROVIDER=azure_search` injects results from Azure AI Search.
 - `RAG_PROVIDER=none` disables retrieval.
 
+## Agent implementations
+
+The repository keeps the two Foundry implementations separate while sharing
+one intake behavior contract:
+
+```text
+agents/
+  shared/   # canonical intake instructions
+  hosted/   # Agent Framework code, DevUI, history, and RAG
+  prompt/   # prompt-agent config and create/update workflow
+```
+
+The hosted agent retains Cosmos DB history and Azure AI Search retrieval. The
+prompt agent initially uses Foundry-managed state with no tools or RAG. Both
+load `agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
+inside either implementation.
+
 ## Intake request contract
 
 [`schemas/intake-request.schema.json`](schemas/intake-request.schema.json)
@@ -410,7 +427,7 @@ debugging. It is a sample development tool and is not intended for production.
 Start DevUI:
 
 ```powershell
-python devui.py
+python -m agents.hosted.devui
 ```
 
 The browser opens at `http://localhost:8080`. DevUI authentication is enabled;
@@ -421,7 +438,7 @@ Do not commit that token to `.env` or source control.
 Optional arguments:
 
 ```powershell
-python devui.py --port 8081 --no-open --reload
+python -m agents.hosted.devui --port 8081 --no-open --reload
 ```
 
 DevUI uses the same harness agent and `HISTORY_PROVIDER` setting as the CLI.
@@ -489,8 +506,8 @@ Supported levels are `CRITICAL`, `ERROR`, `WARNING`, `INFO`, and `DEBUG`.
 The default is `INFO`. A command-line value overrides `.env`:
 
 ```powershell
-python agent.py --log-level DEBUG
-python devui.py --reload --no-open --log-level DEBUG
+python -m agents.hosted.agent --log-level DEBUG
+python -m agents.hosted.devui --reload --no-open --log-level DEBUG
 ```
 
 `DEBUG` also logs each RAG provider's retrieval result count. OpenTelemetry
@@ -504,20 +521,20 @@ metadata.
 Start an interactive conversation:
 
 ```powershell
-python agent.py
+python -m agents.hosted.agent
 ```
 
 The CLI prints the generated session ID. With `HISTORY_PROVIDER=cosmos`, reuse
 it later to restore the conversation:
 
 ```powershell
-python agent.py --session-id "<session-id>"
+python -m agents.hosted.agent --session-id "<session-id>"
 ```
 
 Or send a one-shot prompt:
 
 ```powershell
-python agent.py "Explain Microsoft Agent Framework in one sentence." `
+python -m agents.hosted.agent "Explain Microsoft Agent Framework in one sentence." `
   --session-id "<session-id>"
 ```
 
@@ -525,6 +542,46 @@ If Azure returns `403 Forbidden`, grant the signed-in identity a Foundry role
 that permits project inference and the required Cosmos DB data-plane role,
 then sign in again. Cosmos mode also requires private network connectivity to
 the provisioned virtual network.
+
+## Prompt agent
+
+The prompt variant is defined by `agents/prompt/config.yaml` and uses the same
+model deployment and project endpoint environment variables as the hosted
+agent. `PROMPT_AGENT_NAME` defaults to `maf-poc-prompt-agent`.
+
+Validate its local configuration without calling Foundry:
+
+```powershell
+python -m agents.prompt.sync --dry-run
+```
+
+Create the agent or create a new immutable version when its model,
+instructions, description, or tools change:
+
+```powershell
+python -m agents.prompt.sync
+```
+
+The command uses `DefaultAzureCredential` and requires a project role that can
+manage Foundry agents. It does not delete agents and does not silently fall back
+to another project, model, or authentication method.
+
+Shared behavior cases are stored in
+`evals/shared/intake_behavior.jsonl`. Pass the prompt agent's immutable name and
+version to the Foundry evaluation workflow:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --dataset evals/shared/intake_behavior.jsonl `
+  --dataset-name maf-poc-shared-intake `
+  --dataset-version 1 `
+  --agent-name $env:PROMPT_AGENT_NAME `
+  --agent-version "<prompt-agent-version>" `
+  --inline-data
+```
+
+The existing local and hosted smoke datasets assert retrieval and source
+attribution and therefore remain hosted-agent checks.
 
 ## Local evaluation
 
@@ -855,7 +912,9 @@ automatic deletion path.
 
 ## Foundry Agent Service configuration
 
-The hosted entry point is `hosted_agent.py`. The `azure.yaml` service deploys
+The hosted implementation is `agents/hosted/hosted_agent.py`. A thin,
+stable root `hosted_agent.py` entry point delegates to it so the existing
+`azure.yaml` deployment contract remains unchanged. The service deploys
 `maf-poc-agent` to the private project with:
 
 - Cosmos DB conversation history

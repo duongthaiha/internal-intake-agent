@@ -5,7 +5,7 @@ from pathlib import Path
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
-from search_index import initialize_search_index
+from agents.hosted.search_index import initialize_search_index
 
 
 def get_required_setting(name: str) -> str:

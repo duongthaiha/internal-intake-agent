@@ -1,3 +1,5 @@
+"""Azure AI Search index initialization for hosted-agent knowledge."""
+
 import logging
 import re
 from pathlib import Path
@@ -12,7 +14,7 @@ from azure.search.documents.indexes.models import (
     SimpleField,
 )
 
-from rag import SUPPORTED_DOCUMENT_SUFFIXES, chunk_text
+from agents.hosted.rag import SUPPORTED_DOCUMENT_SUFFIXES, chunk_text
 
 
 logger = logging.getLogger(__name__)

@@ -1,3 +1,5 @@
+"""Observable Cosmos DB history provider for the hosted agent."""
+
 from collections.abc import Sequence
 from typing import Any
 

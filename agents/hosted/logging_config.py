@@ -1,3 +1,5 @@
+"""Logging configuration shared by hosted-agent entry points."""
+
 import logging
 import os
 

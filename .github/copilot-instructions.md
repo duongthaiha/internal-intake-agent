@@ -13,14 +13,20 @@
 
 ## Architecture
 
-- `agent.py` owns agent construction, Foundry model access, history-provider
-	selection, and RAG-provider composition.
-- `hosted_agent.py` is the hosted-agent entry point and performs dependency startup
-	checks before serving requests.
-- `devui.py` and `agent.py` are the local interactive entry points.
-- `history.py`, `rag.py`, and `search_index.py` own Cosmos DB history, retrieval,
-	and Azure AI Search indexing respectively. Keep provider-specific behavior within
-	these boundaries.
+- `agents/shared/` owns the canonical intake instructions used by both agent
+	variants.
+- `agents/hosted/agent.py` owns hosted-agent construction, Foundry model access,
+	history-provider selection, and RAG-provider composition.
+- `agents/hosted/hosted_agent.py` is the hosted-agent entry point and performs
+	dependency startup checks before serving requests.
+- `agents/hosted/devui.py` and `agents/hosted/agent.py` are the local interactive
+	hosted-agent entry points.
+- `agents/hosted/history.py`, `agents/hosted/rag.py`, and
+	`agents/hosted/search_index.py` own Cosmos DB history, retrieval, and Azure AI
+	Search indexing respectively. Keep provider-specific behavior within these
+	boundaries.
+- `agents/prompt/` owns the repository-managed Foundry prompt-agent definition
+	and synchronization workflow. It initially has no tools or RAG provider.
 - `azure.yaml` defines the hosted Agent Framework service and its runtime settings.
 - `infra/` contains the Bicep deployment. Official Foundry modules are vendored
   under `infra/modules-network-secured/`; workload additions belong in
@@ -129,7 +135,7 @@
 - Use the narrowest applicable validation first, then broaden based on risk:
 
 	```powershell
-	python -m compileall agent.py devui.py hosted_agent.py history.py rag.py search_index.py scripts
+	python -m compileall agents scripts
 	python -m scripts.evaluate_local
 	az bicep build --file infra/main.bicep
 	.\scripts\validate_byo_deployment.ps1

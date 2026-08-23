@@ -19,8 +19,8 @@ from agent_framework_azure_ai_search import AzureAISearchContextProvider
 from agent_framework_azure_cosmos import CosmosHistoryProvider
 from dotenv import load_dotenv
 
-from agent import build_agent
-from logging_config import LOG_LEVEL_NAMES, configure_logging
+from agents.hosted.agent import build_agent
+from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
 
 
 DEFAULT_CASES_PATH = Path("evals/local_cases.jsonl")

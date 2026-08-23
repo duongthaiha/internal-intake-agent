@@ -1,0 +1,6 @@
+nameEnvironmentVariable: PROMPT_AGENT_NAME
+defaultName: maf-poc-prompt-agent
+description: Repository-managed prompt variant of the internal intake agent.
+projectEndpointEnvironmentVariable: FOUNDRY_PROJECT_ENDPOINT
+modelEnvironmentVariable: AZURE_AI_MODEL_DEPLOYMENT_NAME
+instructionsPath: agents/shared/instructions/intake_agent.md
