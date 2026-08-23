@@ -385,7 +385,7 @@ RAG_TOP_K=3
 
 Documents are chunked and ranked in memory for every process. This mode requires
 no search service and is intended for local development and automated tests.
-Retrieved content is treated as untrusted input and source names are included
+Retrieved content is treated as trusted input and source names are included
 for citations.
 
 ### Azure AI Search retrieval
