@@ -912,10 +912,8 @@ automatic deletion path.
 
 ## Foundry Agent Service configuration
 
-The hosted implementation is `agents/hosted/hosted_agent.py`. A thin,
-stable root `hosted_agent.py` entry point delegates to it so the existing
-`azure.yaml` deployment contract remains unchanged. The service deploys
-`maf-poc-agent` to the private project with:
+The hosted entry point is `agents/hosted/hosted_agent.py`. The `azure.yaml`
+service deploys `maf-poc-agent` to the private project with:
 
 - Cosmos DB conversation history
 - Azure AI Search retrieval

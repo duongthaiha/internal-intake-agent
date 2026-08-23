@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from azure.ai.projects.models import PromptAgentDefinition
@@ -100,6 +101,38 @@ class PromptAgentTests(unittest.TestCase):
             result = sync_prompt_agent(config, dry_run=True, force=False)
 
         self.assertIn("Would synchronize prompt agent 'prompt-agent'", result)
+
+    @patch("agents.prompt.sync.AIProjectClient")
+    @patch("agents.prompt.sync.DefaultAzureCredential")
+    def test_existing_agent_without_latest_version_creates_version(
+        self,
+        credential_type,
+        project_client_type,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            instructions = Path(directory) / "instructions.md"
+            instructions.write_text("Be helpful.", encoding="utf-8")
+            config = SimpleNamespace(
+                name="prompt-agent",
+                description="Prompt agent",
+                project_endpoint=(
+                    "https://example.services.ai.azure.com/api/projects/test"
+                ),
+                model="model",
+                instructions_path=instructions,
+            )
+            credential = credential_type.return_value
+            client = project_client_type.return_value.__enter__.return_value
+            client.agents.get.return_value = SimpleNamespace(
+                versions=SimpleNamespace(latest=None)
+            )
+            client.agents.create_version.return_value = SimpleNamespace(version="1")
+
+            result = sync_prompt_agent(config, dry_run=False, force=False)
+
+        self.assertIn("version 1", result)
+        client.agents.create_version.assert_called_once()
+        credential.close.assert_called_once()
 
 
 if __name__ == "__main__":

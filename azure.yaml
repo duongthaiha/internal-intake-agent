@@ -37,7 +37,7 @@ services:
             RAG_TOP_K: "3"
         codeConfiguration:
             dependencyResolution: remote_build
-            entryPoint: hosted_agent.py
+            entryPoint: agents/hosted/hosted_agent.py
             runtime: python_3_13
         container:
             resources:

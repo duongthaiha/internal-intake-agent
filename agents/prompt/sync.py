@@ -122,15 +122,16 @@ def sync_prompt_agent(
             except ResourceNotFoundError:
                 existing = None
 
+            latest = existing.versions.latest if existing is not None else None
             if (
-                existing is not None
+                latest is not None
                 and not force
-                and definitions_match(existing.versions.latest.definition, definition)
-                and existing.versions.latest.description == config.description
+                and definitions_match(latest.definition, definition)
+                and latest.description == config.description
             ):
                 return (
                     f"Prompt agent '{config.name}' is already current at version "
-                    f"{existing.versions.latest.version}."
+                    f"{latest.version}."
                 )
 
             version = project_client.agents.create_version(
