@@ -424,16 +424,54 @@ roles and Cosmos DB Built-in Data Contributor to the hosted agent identity.
 provides a local web interface and OpenAI-compatible API for development and
 debugging. It is a sample development tool and is not intended for production.
 
+DevUI loads the repository's `.env` file. Create it from the example:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+At minimum, configure these values:
+
+```dotenv
+FOUNDRY_PROJECT_ENDPOINT=https://<foundry-account>.services.ai.azure.com/api/projects/<project>
+AZURE_AI_MODEL_DEPLOYMENT_NAME=<model-deployment-name>
+HISTORY_PROVIDER=memory
+RAG_PROVIDER=memory
+RAG_DOCUMENTS_PATH=data/knowledge
+```
+
+`FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` are required,
+non-secret deployment identifiers. `FOUNDRY_MODEL` can be used instead of
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`. The local provider values shown above require
+no Cosmos DB or Azure AI Search configuration. Authenticate the
+`DefaultAzureCredential` identity before starting DevUI:
+
+```powershell
+az login
+```
+
+Alternatively, load the required values from an existing azd environment for
+the current PowerShell session:
+
+```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = azd env get-value FOUNDRY_PROJECT_ENDPOINT --environment {azd-env-name}
+$env:AZURE_AI_MODEL_DEPLOYMENT_NAME = azd env get-value AZURE_AI_MODEL_DEPLOYMENT_NAME --environment {azd-env-name}
+$env:HISTORY_PROVIDER = "memory"
+$env:RAG_PROVIDER = "memory"
+```
+
 Start DevUI from the hosted-agent package:
 
 ```powershell
+$env:DEVUI_AUTH_TOKEN = "{personal token}"
 python -m agents.hosted.devui
 ```
 
 The browser opens at `http://localhost:8080`. DevUI authentication is enabled;
-the development token is printed in the terminal at startup.
-Set `DEVUI_AUTH_TOKEN` in the shell when a stable local API token is needed.
-Do not commit that token to `.env` or source control.
+the command generates and sets a token only for the current PowerShell session.
+DevUI does not print the token. Use `$env:DEVUI_AUTH_TOKEN` as the bearer token
+for the OpenAI-compatible API. Do not commit the token to `.env` or source
+control.
 
 Optional arguments:
 
