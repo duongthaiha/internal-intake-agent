@@ -464,7 +464,7 @@ Start DevUI from the hosted-agent package:
 
 ```powershell
 $env:DEVUI_AUTH_TOKEN = "{personal token}"
-python -m agents.hosted.devui
+python -m agents.hosted.devui --reload --log-level DEBUG 
 ```
 
 The browser opens at `http://localhost:8080`. DevUI authentication is enabled;

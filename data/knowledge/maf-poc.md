@@ -1,6 +1,6 @@
 # MAF POC knowledge
 
-The MAF POC Intake Agent uses Microsoft Agent Framework with the
+The MAF POC Intake Agent uses Microsoft Agent Framework with the llm model
 `gpt-5.6-sol` deployment in a dedicated private Microsoft Foundry project.
 
 For local development, conversation history uses the in-memory history provider

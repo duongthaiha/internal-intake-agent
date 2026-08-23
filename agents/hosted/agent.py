@@ -7,7 +7,12 @@ import os
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
-from agent_framework import Agent, InMemoryHistoryProvider, create_harness_agent
+from agent_framework import (
+    Agent,
+    AgentModeProvider,
+    InMemoryHistoryProvider,
+    create_harness_agent,
+)
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_azure_ai_search import AzureAISearchContextProvider
 from agent_framework_azure_cosmos import CosmosHistoryProvider
@@ -102,6 +107,7 @@ def build_agent() -> AgentComponents:
         history_provider=history_provider,
         context_providers=[rag_provider] if rag_provider else None,
         disable_file_memory=True,
+        mode_provider=AgentModeProvider(default_mode="execute"),
         default_options={"store": False},
     )
 
