@@ -660,6 +660,13 @@ python -m scripts.evaluate_foundry `
   --dataset-version 2
 ```
 
+`evals/foundry_comprehensive_single_turn.jsonl` provides the same reviewed
+coverage as self-contained single-turn examples. Each `query` is one natural
+end-user message with no embedded turn transcript, while `ground_truth` and
+`response` contain the reviewed reference answer. This follows Foundry synthetic
+Simple Q&A datasets, which use `query` and `ground_truth`, while retaining the
+repository's behavioral and retrieval fields for custom and built-in evaluators.
+
 | Run | Included evaluators |
 | --- | --- |
 | Turn | Coherence, Fluency, Similarity, F1, BLEU, GLEU, ROUGE, METEOR, Retrieval, Document Retrieval, Groundedness, Groundedness Pro, Relevance, Response Completeness, Hate and Unfairness, Sexual, Violence, Self-Harm, Protected Materials, Indirect Attack, Ungrounded Attributes, Task Adherence, Task Completion, Intent Resolution, Quality Grader, and `maf_poc_expected_behavior` |
