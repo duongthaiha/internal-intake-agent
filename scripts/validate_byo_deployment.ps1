@@ -64,6 +64,12 @@ $allowedClientIpCidr = Get-AzdValue "AZURE_ALLOWED_CLIENT_IP_CIDR"
 $allowedClientIp = $allowedClientIpCidr -replace '/32$', ''
 $acrName = Get-AzdValueOrDefault "AZURE_CONTAINER_REGISTRY_NAME"
 $acrDeveloperIpCidr = Get-AzdValueOrDefault "AZURE_ACR_DEVELOPER_IP_CIDR"
+$intakeCosmosAccount = Get-AzdValue "INTAKE_COSMOS_ACCOUNT_NAME"
+$intakeCosmosDatabase = Get-AzdValue "INTAKE_COSMOS_DATABASE_NAME"
+$intakeCosmosContainer = Get-AzdValue "INTAKE_COSMOS_CONTAINER_NAME"
+$intakeApiName = Get-AzdValue "SERVICE_INTAKE_API_NAME"
+$intakeApiUri = Get-AzdValue "SERVICE_INTAKE_API_URI"
+$intakeSubnetId = Get-AzdValue "AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID"
 
 # ---------------------------------------------------------------------------
 # Foundry account: dual inbound path posture
@@ -127,6 +133,68 @@ if ($cosmos.publicNetworkAccess -ne "Disabled" -or -not $cosmos.disableLocalAuth
     throw "Cosmos DB '$cosmosAccount' must have public network access disabled and local authentication disabled."
 }
 
+$intakeCosmos = az cosmosdb show --name $intakeCosmosAccount --resource-group $resourceGroup --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake Cosmos DB account '$intakeCosmosAccount'."
+}
+if ($intakeCosmos.publicNetworkAccess -ne "Disabled" -or -not $intakeCosmos.disableLocalAuth) {
+    throw "Intake Cosmos DB '$intakeCosmosAccount' must have public network access disabled and local authentication disabled."
+}
+$intakeContainer = az cosmosdb sql container show `
+    --account-name $intakeCosmosAccount `
+    --database-name $intakeCosmosDatabase `
+    --name $intakeCosmosContainer `
+    --resource-group $resourceGroup `
+    --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake Cosmos container '$intakeCosmosContainer'."
+}
+$partitionKey = if ($intakeContainer.resource.partitionKey) {
+    $intakeContainer.resource.partitionKey
+} else {
+    $intakeContainer.partitionKey
+}
+if (
+    $partitionKey.kind -ne "MultiHash" -or
+    @($partitionKey.paths).Count -ne 2 -or
+    $partitionKey.paths[0] -ne "/tenantId" -or
+    $partitionKey.paths[1] -ne "/id"
+) {
+    throw "Intake Cosmos container must use the hierarchical partition key '/tenantId', '/id'."
+}
+
+# ---------------------------------------------------------------------------
+# Intake Container App posture and liveness
+# ---------------------------------------------------------------------------
+$intakeSubnet = az network vnet subnet show --ids $intakeSubnetId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake Container Apps subnet '$intakeSubnetId'."
+}
+$intakeDelegations = @($intakeSubnet.delegations | ForEach-Object { $_.serviceName })
+if ($intakeDelegations -notcontains "Microsoft.App/environments") {
+    throw "Intake subnet must be delegated to 'Microsoft.App/environments'."
+}
+
+$intakeApp = az containerapp show --name $intakeApiName --resource-group $resourceGroup --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake Container App '$intakeApiName'."
+}
+if (
+    -not $intakeApp.properties.configuration.ingress.external -or
+    $intakeApp.properties.configuration.ingress.targetPort -ne 8000 -or
+    -not $intakeApp.identity.principalId
+) {
+    throw "Intake Container App must use external HTTPS ingress on port 8000 and a managed identity."
+}
+$intakeImage = $intakeApp.properties.template.containers[0].image
+if ($intakeImage -match "containerapps-helloworld") {
+    throw "Intake Container App is still running the provisioning placeholder image."
+}
+$liveness = Invoke-RestMethod -Uri "$($intakeApiUri.TrimEnd('/'))/health/live" -Method Get -TimeoutSec 30
+if ($liveness.status -ne "ok") {
+    throw "Intake API liveness check failed."
+}
+
 # ---------------------------------------------------------------------------
 # Azure AI Search posture (see infra/UPSTREAM.md: local auth stays enabled
 # alongside authOptions.aadOrApiKey for capability-host compatibility).
@@ -179,7 +247,7 @@ if ($acrName) {
 # ---------------------------------------------------------------------------
 # Private endpoint approval count/status
 # ---------------------------------------------------------------------------
-$expectedPeTargets = @($foundryAccount, $searchService, $storageAccount, $cosmosAccount)
+$expectedPeTargets = @($foundryAccount, $searchService, $storageAccount, $cosmosAccount, $intakeCosmosAccount)
 if ($acrName) {
     $expectedPeTargets += $acrName
 }
@@ -277,3 +345,4 @@ Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one narrow CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
 Write-Output "Cosmos DB / Azure AI Search / Storage$(if ($acrName) { ' / Container Registry' }) public access posture verified; all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
+Write-Output "Intake API: deployed image is live; dedicated subnet delegation, managed identity, and private Cosmos account/container partitioning verified."
