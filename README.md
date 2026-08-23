@@ -439,8 +439,11 @@ The private hosted deployment exports application spans to the
 project-connected Application Insights resource. Hosted traces include
 `rag.retrieve azure_ai_search` and `cosmos.history.save`; Cosmos load spans are
 also emitted when `COSMOS_LOAD_MESSAGES=true`. Message content capture is
-disabled through `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false`.
-New spans can take several minutes to appear in the Foundry trace viewer.
+enabled through `ENABLE_SENSITIVE_DATA=true` and
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`. This records prompts,
+responses, tool arguments, and tool results in Application Insights; restrict
+trace access and retention accordingly. New spans can take several minutes to
+appear in the Foundry trace viewer.
 
 Foundry calculates the **Estimated cost** value; the agent does not emit a
 dollar-cost metric. The calculation requires model-call spans with
