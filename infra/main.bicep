@@ -811,3 +811,5 @@ output AZURE_BASTION_PUBLIC_IP string = deployAdminAccess ? adminAccess.outputs.
 
 output ENABLE_HOSTED_AGENTS bool = true
 output FOUNDRY_SCHEDULED_EVALUATION_ROLE_ASSIGNMENT_ID string = scheduledEvaluationRoleAssignment.outputs.roleAssignmentId
+output FOUNDRY_SCHEDULED_EVALUATION_MODEL_ROLE_ASSIGNMENT_ID string = scheduledEvaluationRoleAssignment.outputs.modelInferenceRoleAssignmentId
+output FOUNDRY_EVALUATION_OPERATOR_MODEL_ROLE_ASSIGNMENT_ID string = scheduledEvaluationRoleAssignment.outputs.operatorModelInferenceRoleAssignmentId
