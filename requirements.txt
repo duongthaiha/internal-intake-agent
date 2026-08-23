@@ -8,4 +8,5 @@ azure-search-documents
 azure-cosmos
 azure-identity
 python-dotenv
+PyYAML==6.0.2
 watchfiles

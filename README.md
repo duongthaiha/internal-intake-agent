@@ -467,52 +467,57 @@ $env:AZURE_DEV_USER_AGENT = "microsoft_foundry_skill"
 az login --tenant "<tenant-guid>"
 azd env select maf-poc-byo
 azd env get-values --environment maf-poc-byo | ForEach-Object {
-  if ($_ -match '^([^=]+)="(.*)"$') {
-    [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+  $name, $value = $_ -split "=", 2
+  if ($name -and $null -ne $value) {
+    [Environment]::SetEnvironmentVariable($name, $value.Trim('"'), "Process")
   }
 }
 ```
 
-The signed-in operator needs **Foundry User** on the project. Native schedules
-execute as the Foundry project managed identity; the Bicep deployment grants
-that identity **Foundry User** at project scope. Role propagation can take
-several minutes.
+The signed-in operator needs **Foundry User** on the project and **Cognitive
+Services OpenAI User** on the parent Foundry account. Native schedules execute
+as the Foundry project managed identity; the Bicep deployment grants that
+identity **Foundry User** at project scope and **Cognitive Services OpenAI
+User** at account scope. Role propagation can take several minutes.
 
 Run a one-off evaluation:
 
 ```powershell
-python -m scripts.evaluate_foundry
+python -m scripts.evaluate_foundry --inline-data
 ```
 
-The default `smoke` suite authenticates with the Azure CLI identity, uploads a
-versioned Foundry dataset, invokes the exact hosted-agent version, waits for
-completion, and saves per-item results under `.foundry/results/`.
+The default `smoke` suite authenticates with the Azure CLI identity, invokes the
+exact hosted-agent version, waits for completion, and saves per-item results
+under `.foundry/results/`. `--inline-data` embeds the reviewed rows in the
+Foundry request, avoiding direct access to the private Storage data plane. A
+VNet-connected runner can omit that flag to register an immutable dataset.
 
 #### Comprehensive multi-turn evaluation
 
 `evals/foundry_comprehensive_multi_turn.jsonl` contains reviewed, fictional
 internal-intake conversations based on Foundry's OpenAI-style `messages` schema.
-Each row also includes the flattened fields needed by turn-level evaluators:
+Each row also includes `agent_query`, a standalone prompt carrying all requester
+turns, plus the flattened fields needed by turn-level evaluators:
 
 ```json
-{"case_id":"missing-required-details","category":"clarification","messages":[{"role":"user","content":[{"type":"text","text":"Can you submit this incomplete idea?"}]},{"role":"assistant","content":[{"type":"text","text":"Not yet. The required details are missing."}]}],"query":"Submit an incomplete request.","response":"Not yet. The required details are missing.","ground_truth":"Decline to submit and identify missing required fields.","context":"Relevant reviewed source text.","expected_behavior":"Ask for missing fields and do not invent them.","retrieval_ground_truth":[{"document_id":"intake-schema","query_relevance_label":4}],"retrieved_documents":[{"document_id":"intake-schema","relevance_score":1.0}]}
+{"case_id":"missing-required-details","category":"clarification","messages":[{"role":"user","content":[{"type":"text","text":"Can you submit this incomplete idea?"}]},{"role":"assistant","content":[{"type":"text","text":"Not yet. The required details are missing."}]}],"query":"Submit an incomplete request.","response":"Not yet. The required details are missing.","ground_truth":"Decline to submit and identify missing required fields.","context":"Relevant reviewed source text.","expected_behavior":"Ask for missing fields and do not invent them.","retrieval_ground_truth":[{"document_id":"intake-schema","query_relevance_label":4}],"retrieved_documents":[{"document_id":"intake-schema","relevance_score":1.0}],"agent_query":"Treat the requester messages below as one standalone internal-intake conversation..."}
 ```
 
 Run both comprehensive evaluations:
 
 ```powershell
-python -m scripts.evaluate_foundry --suite comprehensive
+python -m scripts.evaluate_foundry --suite comprehensive --inline-data
 ```
 
-The command registers `maf-poc-comprehensive:1` and creates two direct dataset
+The command registers `maf-poc-comprehensive:2` and creates two direct dataset
 evaluations. The turn-level run scores each reviewed final response; the
 conversation-level run scores each complete `messages` interaction. They must
 be separate because Foundry rejects a run that mixes evaluators with
 incompatible evaluation levels.
 
-The comprehensive suite evaluates reviewed transcripts and does **not** invoke
-the deployed hosted agent. Keep the default smoke suite for live deployed-agent
-regression. When the comprehensive dataset changes, increment its immutable
+The `comprehensive` suite evaluates reviewed transcripts and does **not** invoke
+the deployed hosted agent. Use `comprehensive-replay` to test the current agent
+with the same cases. When the source dataset changes, increment its immutable
 version:
 
 ```powershell
@@ -538,12 +543,93 @@ configurable extensions rather than fixed built-in signals; the existing
 expected-behavior custom evaluator remains the domain-specific judge.
 
 Several comprehensive evaluators and conversation-level evaluation are preview
-features and might not be available in every Foundry region. The command fails
-if Foundry rejects an unavailable evaluator rather than silently reducing
-coverage. Each LLM-judge and hosted safety evaluation can incur model or
-evaluation-service cost. Token-overlap metrics are included for complete
-built-in coverage but should be treated as secondary signals for open-ended
-answers.
+features. UK South supports batch evaluation but does not support the risk and
+safety evaluator service, Groundedness Pro, or Protected Materials. The runner
+therefore reports and excludes `hate_unfairness`, `sexual`, `violence`,
+`self_harm`, `indirect_attack`, `ungrounded_attributes`, `groundedness_pro`, and
+`protected_material` from executable UK South runs. The full definitions remain
+enabled in supported regions. Other unavailable evaluators fail the run rather
+than being silently treated as passing. Each LLM judge and hosted safety
+evaluation can incur model or evaluation-service cost. Token-overlap metrics
+are included for complete built-in coverage but should be treated as secondary
+signals for open-ended answers.
+
+#### Relink an existing deployed environment
+
+An azd environment is local state and is not committed. From a clean clone,
+relink the existing resource group without provisioning or redeploying:
+
+```powershell
+$environment = "maf-poc-byo"
+$subscription = "<subscription-guid>"
+$tenant = "<tenant-guid>"
+$resourceGroup = "<existing-resource-group>"
+$location = "uksouth"
+$agentName = "maf-poc-agent"
+
+$env:AZURE_DEV_USER_AGENT = "microsoft_foundry_skill"
+az login --tenant $tenant
+az account set --subscription $subscription
+azd env new $environment --subscription $subscription --location $location --no-prompt
+azd env set "AZURE_TENANT_ID=$tenant" "AZURE_RESOURCE_GROUP=$resourceGroup" `
+  --environment $environment --no-prompt
+
+$deploymentName = az deployment group list --resource-group $resourceGroup `
+  --query "[?properties.provisioningState=='Succeeded'] | sort_by(@, &properties.timestamp)[-1].name" `
+  --output tsv
+$outputs = az deployment group show --resource-group $resourceGroup `
+  --name $deploymentName --query properties.outputs --output json | ConvertFrom-Json
+$projectEndpoint = $outputs.foundrY_PROJECT_ENDPOINT.value
+$modelDeployment = $outputs.azurE_AI_MODEL_DEPLOYMENT_NAME.value
+
+$agent = az rest --method get --resource "https://ai.azure.com" `
+  --url "$projectEndpoint/agents/$agentName?api-version=v1" | ConvertFrom-Json
+$agentVersion = [string]$agent.versions.latest.version
+$agentEndpoint = "$projectEndpoint/agents/$agentName/versions/$agentVersion"
+
+azd env set "FOUNDRY_PROJECT_ENDPOINT=$projectEndpoint" `
+  "AZURE_AI_PROJECT_ENDPOINT=$projectEndpoint" `
+  "AZURE_AI_MODEL_DEPLOYMENT_NAME=$modelDeployment" `
+  "AGENT_MAF_POC_AGENT_NAME=$agentName" `
+  "AGENT_MAF_POC_AGENT_VERSION=$agentVersion" `
+  "AGENT_MAF_POC_AGENT_ENDPOINT=$agentEndpoint" `
+  --environment $environment --no-prompt
+
+azd ai agent show --environment $environment --output json --no-prompt |
+  ConvertFrom-Json | Select-Object id, status
+```
+
+`azd env refresh` is not used here because this deployment has secure input
+parameters that are intentionally unavailable in a clean clone. Do not invent,
+rotate, or copy those values merely to refresh non-secret outputs.
+
+#### Exact live multi-turn replay
+
+Replay every requester turn in each case against one fresh hosted-agent
+conversation, then evaluate the generated transcripts at both turn and
+conversation levels:
+
+```powershell
+azd env get-values --environment maf-poc-byo | ForEach-Object {
+  $name, $value = $_ -split "=", 2
+  if ($name -and $null -ne $value) {
+    [Environment]::SetEnvironmentVariable($name, $value.Trim('"'), "Process")
+  }
+}
+
+python -m scripts.evaluate_foundry `
+  --suite comprehensive-replay `
+  --inline-data `
+  --environment maf-poc-byo
+```
+
+The first turn in each case uses a new hosted session and Foundry conversation;
+follow-up turns reuse that conversation. Golden assistant messages are never
+sent to the agent or used as fallbacks. Generated transcripts are cached under
+`.foundry/datasets/`, registered with a version derived from the source SHA and
+agent version, and scored by the same turn/conversation evaluations. Detailed
+results and failure clusters are written under
+`.foundry/results/<environment>/<evaluation-id>/`.
 
 ### Native daily Foundry evaluation
 
@@ -580,11 +666,42 @@ the schedule upsert command again. A failed or missing
 `AGENT_MAF_POC_AGENT_VERSION` stops setup rather than silently targeting an old
 version.
 
+Create a separate daily live-agent regression from the comprehensive dataset:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --suite comprehensive-agent `
+  --inline-data `
+  --action schedule
+```
+
+This creates or updates `maf-poc-daily-comprehensive` at **09:00 UTC**. Each
+`agent_query` is independently invocable, so native Recurring Configs can run
+the cases without custom replay orchestration. The schedule evaluates generated
+agent output with all applicable turn-level evaluators except Retrieval and
+Document Retrieval, because the agent-target result does not expose the Azure AI
+Search context provider's actual retrieved-document artifacts.
+
+Check only the comprehensive schedule:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --suite comprehensive-agent `
+  --inline-data `
+  --action status
+```
+
+Exact multi-turn behavior remains an on-demand replay because Foundry Recurring
+Configs cannot execute custom turn-by-turn orchestration. Both workflows pin the
+immutable hosted-agent version and must be refreshed after deployment.
+
 To use a revised dataset, increment the immutable version:
 
 ```powershell
 python -m scripts.evaluate_foundry `
+  --suite comprehensive-agent `
   --action schedule `
+  --inline-data `
   --dataset-version 3
 ```
 

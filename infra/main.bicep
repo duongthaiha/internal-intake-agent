@@ -475,6 +475,7 @@ module scheduledEvaluationRoleAssignment 'modules-local/foundry-scheduled-evalua
     accountName: aiAccount.outputs.accountName
     projectName: aiProject.outputs.projectName
     projectPrincipalId: aiProject.outputs.projectPrincipalId
+    evaluationOperatorPrincipalId: principalId
   }
 }
 

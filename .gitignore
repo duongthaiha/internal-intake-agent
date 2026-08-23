@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 .foundry/results/
 .foundry/schedules/
+.foundry/datasets/
+.foundry/agent-metadata.yaml
