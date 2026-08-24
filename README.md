@@ -117,7 +117,8 @@ cannot select them in request bodies. Requesters can access only their own
 records. Privileged roles remain tenant-scoped.
 
 The deployed service uses its managed identity to access a dedicated Cosmos DB
-account. The account disables local authentication and public networking. Its
+account. The account disables local authentication and permits public access
+only through the configured narrow CIDR, alongside its private endpoint. Its
 `intake/intake-requests` container uses the hierarchical partition key
 `/tenantId`, `/id`; API updates use Cosmos `_etag` optimistic concurrency. The
 account is separate from the Foundry capability-host and chat-history Cosmos
@@ -195,10 +196,11 @@ network-secured template, adapted for this workload. It creates
 The agent subnet permits public outbound traffic. Foundry, both Cosmos DB
 accounts, Azure AI Search, Storage, and ACR retain their private endpoints and
 also enable public access through selected-network rules restricted to
-`85.210.10.0/24`. ACL defaults remain deny, local/key authentication remains
-disabled where already configured, and each template-created service carries
-the `SecurityControl=Ignore` tag. Externally supplied existing resources are
-referenced but not retagged or reconfigured.
+`85.210.10.0/24`. ACL defaults remain deny. The Foundry account retains
+key-based local authentication; both Cosmos DB accounts keep local
+authentication disabled, and Storage keeps shared-key access disabled. Each
+template-created service carries the `SecurityControl=Ignore` tag. Externally
+supplied existing resources are referenced but not retagged or reconfigured.
 
 The current `maf-poc-byo` environment sets `AZURE_DEPLOY_ADMIN_ACCESS=false`
 because this subscription has no deployable VM SKU in UK South. This does not
@@ -263,6 +265,10 @@ Run control-plane and public-path validation separately:
 .\scripts\validate_byo_deployment.ps1 -EnvironmentName maf-poc-byo
 ```
 
+This verifies that the intake and conversation-history stores use different
+Cosmos DB accounts, checks the Container App identity's container-scoped data
+role, and calls both `/health/live` and `/health/ready`.
+
 From the administration VM reached through Azure Bastion, clone this repository,
 install Azure CLI and `azd`, authenticate, then verify private DNS and endpoint
 connectivity:
@@ -270,6 +276,9 @@ connectivity:
 ```powershell
 .\scripts\validate_from_vnet.ps1 -EnvironmentName maf-poc-byo
 ```
+
+The VNet-side checks cover both the conversation-history and intake Cosmos DB
+private endpoints.
 
 Inspect the environment variables captured by the currently published hosted
 agent version:

@@ -96,6 +96,9 @@ Foundry samples repository:
 
 ## Preserved behavior
 
+- The Foundry account retains key-based local authentication
+  (`disableLocalAuth: false`) while its public endpoint remains restricted by
+  the configured selected-network rule and private endpoint.
 - Cosmos DB, Storage, and Azure AI Search keep the upstream private endpoints
   while adding one selected-network public CIDR. Cosmos DB keeps
   `disableLocalAuth: true`, Storage keeps `allowSharedKeyAccess: false`, and
