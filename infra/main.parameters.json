@@ -29,6 +29,36 @@
     "modelCapacity": {
       "value": "${AZURE_AI_MODEL_CAPACITY=250}"
     },
+    "foundryIqChatDeploymentName": {
+      "value": "${FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME=foundry-iq-chat}"
+    },
+    "foundryIqChatModelName": {
+      "value": "${FOUNDRY_IQ_CHAT_MODEL_NAME=gpt-5.4-mini}"
+    },
+    "foundryIqChatModelVersion": {
+      "value": "${FOUNDRY_IQ_CHAT_MODEL_VERSION=2026-03-17}"
+    },
+    "foundryIqChatModelSkuName": {
+      "value": "${FOUNDRY_IQ_CHAT_MODEL_SKU_NAME=GlobalStandard}"
+    },
+    "foundryIqChatModelCapacity": {
+      "value": "${FOUNDRY_IQ_CHAT_MODEL_CAPACITY=10}"
+    },
+    "foundryIqEmbeddingDeploymentName": {
+      "value": "${FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME=foundry-iq-embedding}"
+    },
+    "foundryIqEmbeddingModelName": {
+      "value": "${FOUNDRY_IQ_EMBEDDING_MODEL_NAME=text-embedding-3-large}"
+    },
+    "foundryIqEmbeddingModelVersion": {
+      "value": "${FOUNDRY_IQ_EMBEDDING_MODEL_VERSION=1}"
+    },
+    "foundryIqEmbeddingModelSkuName": {
+      "value": "${FOUNDRY_IQ_EMBEDDING_MODEL_SKU_NAME=GlobalStandard}"
+    },
+    "foundryIqEmbeddingModelCapacity": {
+      "value": "${FOUNDRY_IQ_EMBEDDING_MODEL_CAPACITY=10}"
+    },
     "vnetName": {
       "value": "${AZURE_VIRTUAL_NETWORK_NAME=maf-poc-vnet}"
     },
@@ -52,6 +82,18 @@
     },
     "searchIndexName": {
       "value": "${AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge}"
+    },
+    "foundryIqContainerName": {
+      "value": "${FOUNDRY_IQ_STORAGE_CONTAINER_NAME=knowledge}"
+    },
+    "foundryIqKnowledgeSourceName": {
+      "value": "${FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME=maf-poc-knowledge-source}"
+    },
+    "foundryIqKnowledgeBaseName": {
+      "value": "${FOUNDRY_IQ_KNOWLEDGE_BASE_NAME=maf-poc-knowledge-base}"
+    },
+    "foundryIqIngestionInterval": {
+      "value": "${FOUNDRY_IQ_INGESTION_INTERVAL=PT1H}"
     },
     "cosmosWorkloadDatabaseName": {
       "value": "${AZURE_COSMOS_DATABASE_NAME=agent-framework}"
