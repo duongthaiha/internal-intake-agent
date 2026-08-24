@@ -24,6 +24,7 @@
     .\validate_from_vnet.ps1 `
         -FoundryProjectEndpoint "https://aifmafpoc1a2b.services.ai.azure.com/api/projects/maf-poc-project1a2b" `
         -CosmosEndpoint "https://aifmafpoc1a2bcosmosdb.documents.azure.com:443/" `
+        -IntakeCosmosEndpoint "https://aifmafpoc1a2bintake.documents.azure.com:443/" `
         -SearchEndpoint "https://aifmafpoc1a2bsearch.search.windows.net" `
         -StorageAccountName "aifmafpoc1a2bst"
 #>
@@ -33,6 +34,7 @@ param(
 
     [string]$FoundryProjectEndpoint,
     [string]$CosmosEndpoint,
+    [string]$IntakeCosmosEndpoint,
     [string]$SearchEndpoint,
     [string]$StorageAccountName,
     [string]$AcrLoginServer,
@@ -314,6 +316,7 @@ dependencies
 # ---------------------------------------------------------------------------
 $foundryEndpoint = Get-EffectiveValue -Explicit $FoundryProjectEndpoint -AzdName "FOUNDRY_PROJECT_ENDPOINT" -Required
 $cosmosEndpoint = Get-EffectiveValue -Explicit $CosmosEndpoint -AzdName "AZURE_COSMOS_ENDPOINT" -Required
+$intakeCosmosEndpoint = Get-EffectiveValue -Explicit $IntakeCosmosEndpoint -AzdName "INTAKE_COSMOS_ENDPOINT" -Required
 $searchEndpoint = Get-EffectiveValue -Explicit $SearchEndpoint -AzdName "AZURE_SEARCH_ENDPOINT" -Required
 $storageAccountName = Get-EffectiveValue -Explicit $StorageAccountName -AzdName "AZURE_STORAGE_ACCOUNT_NAME" -Required
 $acrLoginServer = Get-EffectiveValue -Explicit $AcrLoginServer -AzdName "AZURE_CONTAINER_REGISTRY_ENDPOINT"
@@ -327,7 +330,8 @@ if (-not $ApplicationInsightsResourceId) {
 $results = [System.Collections.Generic.List[object]]::new()
 
 $results.Add((Test-PrivateServiceEndpoint -Label "Foundry account" -HostName (Get-HostNameFromEndpoint $foundryEndpoint)))
-$results.Add((Test-PrivateServiceEndpoint -Label "Cosmos DB" -HostName (Get-HostNameFromEndpoint $cosmosEndpoint)))
+$results.Add((Test-PrivateServiceEndpoint -Label "Conversation-history Cosmos DB" -HostName (Get-HostNameFromEndpoint $cosmosEndpoint)))
+$results.Add((Test-PrivateServiceEndpoint -Label "Intake Cosmos DB" -HostName (Get-HostNameFromEndpoint $intakeCosmosEndpoint)))
 $results.Add((Test-PrivateServiceEndpoint -Label "Azure AI Search" -HostName (Get-HostNameFromEndpoint $searchEndpoint)))
 $results.Add((Test-PrivateServiceEndpoint -Label "Storage blob" -HostName "$storageAccountName.blob.core.windows.net"))
 if ($acrLoginServer) {

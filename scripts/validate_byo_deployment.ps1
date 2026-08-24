@@ -18,6 +18,8 @@
       - The hosted agent is reachable and its response is grounded (includes
         the model deployment name and the expected knowledge source), which
         also proves the Cosmos DB and Search startup checks passed.
+      - The intake API uses a separate Cosmos DB account, has the expected
+        container-scoped data role, and passes both liveness and readiness.
     No `az cognitiveservices account managed-network *` calls are made.
 #>
 param(
@@ -104,6 +106,10 @@ $intakeApiName = Get-AzdValue "SERVICE_INTAKE_API_NAME"
 $intakeApiUri = Get-AzdValue "SERVICE_INTAKE_API_URI"
 $intakeSubnetId = Get-AzdValue "AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID"
 
+if ($intakeCosmosAccount -eq $cosmosAccount) {
+    throw "Intake records and conversation history must use separate Cosmos DB accounts."
+}
+
 # ---------------------------------------------------------------------------
 # Foundry account: dual inbound path posture
 # ---------------------------------------------------------------------------
@@ -116,6 +122,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 if (-not $foundryAccountIsExisting) {
     Assert-SecurityControlTag -Resource $foundry -DisplayName "Foundry account '$foundryAccount'"
+    if ($foundry.properties.disableLocalAuth) {
+        throw "Foundry account '$foundryAccount' must retain key-based local authentication."
+    }
     if ($foundry.properties.publicNetworkAccess -ne "Enabled") {
         throw "Foundry account '$foundryAccount' publicNetworkAccess must be 'Enabled' (dual inbound path), found '$($foundry.properties.publicNetworkAccess)'."
     }
@@ -212,7 +221,7 @@ if (
 }
 
 # ---------------------------------------------------------------------------
-# Intake Container App posture and liveness
+# Intake Container App posture, data-plane role, and health
 # ---------------------------------------------------------------------------
 $intakeSubnet = az network vnet subnet show --ids $intakeSubnetId --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) {
@@ -238,9 +247,38 @@ $intakeImage = $intakeApp.properties.template.containers[0].image
 if ($intakeImage -match "containerapps-helloworld") {
     throw "Intake Container App is still running the provisioning placeholder image."
 }
+
+$expectedIntakeContainerScope = "$($intakeCosmos.id)/dbs/$intakeCosmosDatabase/colls/$intakeCosmosContainer"
+$intakeRoleAssignments = @(
+    az cosmosdb sql role assignment list `
+        --account-name $intakeCosmosAccount `
+        --resource-group $resourceGroup `
+        --output json | ConvertFrom-Json
+)
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake Cosmos DB SQL role assignments."
+}
+$intakeDataRole = $intakeRoleAssignments |
+    Where-Object {
+        $_.principalId -eq $intakeApp.identity.principalId -and
+        $_.scope -eq $expectedIntakeContainerScope -and
+        $_.roleDefinitionId -match "/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002$"
+    } |
+    Select-Object -First 1
+if (-not $intakeDataRole) {
+    throw (
+        "Intake Container App identity '$($intakeApp.identity.principalId)' must have " +
+        "Cosmos DB Built-in Data Contributor scoped to '$expectedIntakeContainerScope'."
+    )
+}
+
 $liveness = Invoke-RestMethod -Uri "$($intakeApiUri.TrimEnd('/'))/health/live" -Method Get -TimeoutSec 30
 if ($liveness.status -ne "ok") {
     throw "Intake API liveness check failed."
+}
+$readiness = Invoke-RestMethod -Uri "$($intakeApiUri.TrimEnd('/'))/health/ready" -Method Get -TimeoutSec 30
+if ($readiness.status -ne "ready") {
+    throw "Intake API readiness check failed."
 }
 
 # ---------------------------------------------------------------------------
@@ -403,4 +441,4 @@ Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
 Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
-Write-Output "Intake API: deployed image is live; dedicated subnet delegation, managed identity, and private Cosmos account/container partitioning verified."
+Write-Output "Intake API: deployed image is ready; dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
