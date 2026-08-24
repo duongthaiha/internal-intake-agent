@@ -67,8 +67,7 @@
 	access for database and storage services. Treat these policies as mandatory design
 	constraints, not deployment errors to bypass or exceptions to request.
 - Any IaC change that adds a database, storage account, search service, or similar
-	data service must configure private networking in the same change. Include public
-	network access disabled, local/key authentication disabled where supported, a
+	data service must configure private networking in the same change.  Use managed identity where supported, a
 	a private endpoint for each
 	required subresource, private DNS integration, and workload network connectivity.
 - Ensure private DNS zones are linked to every VNet that must resolve the service,
