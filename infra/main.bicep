@@ -749,6 +749,8 @@ module foundryIqInfrastructure 'modules-local/foundry-iq-infrastructure.bicep' =
     searchPrincipalId: aiDependencies.outputs.aiSearchPrincipalId
     uploaderPrincipalId: principalId
     storageSkuName: contains(['southindia', 'westus'], location) ? 'Standard_GRS' : 'Standard_ZRS'
+    allowedClientIpCidr: allowedClientIpCidr
+    resourceTags: securityControlTags
   }
   dependsOn: [
     privateEndpointAndDNS

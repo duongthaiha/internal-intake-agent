@@ -84,6 +84,7 @@ $searchId = Get-AzdValue "AZURE_SEARCH_SERVICE_RESOURCE_ID"
 $foundryAccountId = Get-AzdValue "AZURE_AI_ACCOUNT_RESOURCE_ID"
 $chatDeploymentName = Get-AzdValue "FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME"
 $embeddingDeploymentName = Get-AzdValue "FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME"
+$allowedClientIpCidr = Get-AzdValue "AZURE_ALLOWED_CLIENT_IP_CIDR"
 
 $resourceGroupId = $storageId -replace "/providers/.*$", ""
 $privateEndpointId = (
@@ -95,8 +96,18 @@ $privateDnsGroupId = (
 )
 
 $storage = Get-ArmResource $storageId "2025-01-01"
+$storageIpRules = @(
+    $storage.properties.networkAcls.ipRules | ForEach-Object {
+        if ($_.ipAddressOrRange) { $_.ipAddressOrRange } else { $_.value }
+    }
+)
 if (
-    $storage.properties.publicNetworkAccess -ne "Disabled" -or
+    $storage.tags.SecurityControl -ne "Ignore" -or
+    $storage.properties.publicNetworkAccess -ne "Enabled" -or
+    $storage.properties.networkAcls.defaultAction -ne "Deny" -or
+    $storage.properties.networkAcls.bypass -ne "AzureServices" -or
+    $storageIpRules.Count -ne 1 -or
+    $storageIpRules[0] -ne $allowedClientIpCidr -or
     $storage.properties.allowSharedKeyAccess -ne $false -or
     $storage.properties.allowBlobPublicAccess -ne $false -or
     $storage.properties.minimumTlsVersion -ne "TLS1_2"

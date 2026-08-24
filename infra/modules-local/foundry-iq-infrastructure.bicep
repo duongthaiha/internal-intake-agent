@@ -22,9 +22,16 @@ param uploaderPrincipalId string
 @description('Storage SKU for the dedicated knowledge account.')
 param storageSkuName string = 'Standard_ZRS'
 
+@description('Client IP CIDR allowed to access the storage account public endpoint.')
+param allowedClientIpCidr string
+
+@description('Tags applied to the dedicated Foundry IQ storage account.')
+param resourceTags object
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   name: storageAccountName
   location: location
+  tags: resourceTags
   kind: 'StorageV2'
   sku: {
     name: storageSkuName
@@ -35,11 +42,16 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     defaultToOAuthAuthentication: true
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     networkAcls: {
-      bypass: 'None'
+      bypass: 'AzureServices'
       defaultAction: 'Deny'
-      ipRules: []
+      ipRules: [
+        {
+          action: 'Allow'
+          value: allowedClientIpCidr
+        }
+      ]
       virtualNetworkRules: []
     }
   }
