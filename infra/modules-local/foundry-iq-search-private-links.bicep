@@ -4,9 +4,6 @@ param searchServiceName string
 @description('Resource ID of the dedicated Foundry IQ source storage account.')
 param storageAccountId string
 
-@description('Resource ID of the Microsoft Foundry account used for model inference.')
-param foundryAccountId string
-
 @description('Deterministic suffix used in shared private link names.')
 param suffix string
 
@@ -55,18 +52,4 @@ resource blobSharedPrivateLink 'Microsoft.Search/searchServices/sharedPrivateLin
   }
 }
 
-resource foundrySharedPrivateLink 'Microsoft.Search/searchServices/sharedPrivateLinkResources@2025-05-01' = {
-  parent: searchService
-  name: 'foundry-iq-models-${suffix}'
-  properties: {
-    groupId: 'openai_account'
-    privateLinkResourceId: foundryAccountId
-    requestMessage: 'Approve private model access for Foundry IQ ingestion and retrieval.'
-  }
-  dependsOn: [
-    blobSharedPrivateLink
-  ]
-}
-
 output blobSharedPrivateLinkName string = blobSharedPrivateLink.name
-output foundrySharedPrivateLinkName string = foundrySharedPrivateLink.name

@@ -301,8 +301,8 @@ another host that can resolve and reach the private Blob and Search endpoints:
 
 The workflow:
 
-1. Approves the two Search-managed private endpoint connections to Blob Storage
-   and the Foundry model endpoint.
+1. Approves the Blob Storage connection, then creates and approves the Foundry
+   model connection after the first shared-link operation is fully complete.
 2. Validates the private Storage posture, container, private endpoint and DNS
    group, shared links, exact RBAC assignments, and model deployments.
 3. Uploads `.md` files recursively with `DefaultAzureCredential`, preserving
@@ -338,7 +338,7 @@ These non-sensitive azd outputs configure the workflow:
 | `FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME` | Search knowledge-source name | `maf-poc-knowledge-source` | Provisioning |
 | `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` | Search knowledge-base name | `maf-poc-knowledge-base` | Provisioning and validation |
 | `FOUNDRY_IQ_INGESTION_INTERVAL` | ISO 8601 incremental refresh interval | `PT1H` | Provisioning |
-| `AZURE_MANAGE_FOUNDRY_IQ_SEARCH_PRIVATE_LINKS` | Create or update the Search shared private links used by Foundry IQ; set `false` only to preserve links during recovery from a stuck Azure control-plane operation | `true` | Provisioning |
+| `AZURE_MANAGE_FOUNDRY_IQ_SEARCH_PRIVATE_LINKS` | Provision the Search-to-Blob shared link; setup then serially ensures the Search-to-Foundry link. Set `false` only to preserve links during recovery from a stuck Azure control-plane operation | `true` | Provisioning |
 | `FOUNDRY_IQ_OPENAI_ENDPOINT` | Foundry model endpoint | Deployment output | Provisioning |
 | `FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME` | Embedding deployment | `foundry-iq-embedding` | Provisioning |
 | `FOUNDRY_IQ_EMBEDDING_MODEL_NAME` | Embedding model identity | `text-embedding-3-large` | Provisioning |

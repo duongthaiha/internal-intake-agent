@@ -763,7 +763,6 @@ module foundryIqSearchPrivateLinks 'modules-local/foundry-iq-search-private-link
   params: {
     searchServiceName: aiDependencies.outputs.aiSearchName
     storageAccountId: foundryIqInfrastructure.outputs.storageAccountId
-    foundryAccountId: aiAccount.outputs.accountID
     suffix: uniqueSuffix
     provisionerPrincipalId: deployer().objectId
   }

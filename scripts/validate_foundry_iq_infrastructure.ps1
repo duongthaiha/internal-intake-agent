@@ -37,16 +37,17 @@ function Assert-RoleAssignment {
         [Parameter(Mandatory)][string]$RoleDefinitionId
     )
 
-    $count = az role assignment list `
-        --scope $Scope `
-        --assignee-object-id $PrincipalId `
-        --role $RoleDefinitionId `
-        --query "length(@)" `
-        --output tsv
-    if ($LASTEXITCODE -ne 0 -or [int]$count -ne 1) {
+    $assignments = @(
+        az role assignment list `
+            --scope $Scope `
+            --assignee-object-id $PrincipalId `
+            --role $RoleDefinitionId `
+            --output json | ConvertFrom-Json
+    )
+    if ($LASTEXITCODE -ne 0 -or $assignments.Count -ne 1) {
         throw (
             "Expected one role '$RoleDefinitionId' assignment for principal " +
-            "'$PrincipalId' at '$Scope', found '$count'."
+            "'$PrincipalId' at '$Scope', found '$($assignments.Count)'."
         )
     }
 }
