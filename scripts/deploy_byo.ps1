@@ -7,7 +7,7 @@
 .DESCRIPTION
     Replaces the old managed-network "private" deployment flow. The current
     infra/main.bicep keeps the Foundry account's private endpoint as the primary
-    path but also allows a single allowlisted public client IPv4 /32 (dual
+    path but also allows a single allowlisted public client IPv4 CIDR (dual
     inbound path) instead of a managed network with outbound rules, so this
     script never calls `az cognitiveservices account managed-network *`.
 
@@ -44,7 +44,7 @@ param(
 
     [string]$IntakeEntraAudience = $env:INTAKE_ENTRA_AUDIENCE,
 
-    [string]$AllowedClientIp,
+    [string]$AllowedClientIp = "85.210.10.0/24",
     [string]$IpDetectionEndpoint = $env:PUBLIC_IP_ECHO_ENDPOINT,
 
     [string]$AdminVmUsername = "azadmin",
@@ -257,11 +257,11 @@ function Resolve-AllowedClientIpCidr {
             $parts = $candidate.Split("/")
             if ($parts.Count -ne 2 -or
                 -not [int]::TryParse($parts[1], [ref]$prefixLength) -or
-                $prefixLength -lt 29 -or
+                $prefixLength -lt 24 -or
                 $prefixLength -gt 32) {
                 throw (
-                    "-AllowedClientIp must be a public IPv4 address or a narrow /29-/32 CIDR " +
-                    "(e.g. 203.0.113.5 or 203.0.113.0/29); got '$candidate'."
+                    "-AllowedClientIp must be a public IPv4 address or a /24-/32 CIDR " +
+                    "(e.g. 203.0.113.5 or 203.0.113.0/24); got '$candidate'."
                 )
             }
             $ip = $parts[0]

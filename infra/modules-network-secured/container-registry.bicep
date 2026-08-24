@@ -39,10 +39,14 @@ param developerIpCidr string = ''
 @description('Principal ID of the project managed identity to grant AcrPull role. When empty, no role assignment is created.')
 param projectPrincipalId string = ''
 
+@description('Tags applied to the Azure Container Registry.')
+param resourceTags object
+
 // ---- ACR Resource ----
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location
+  tags: resourceTags
   sku: {
     name: 'Premium'
   }

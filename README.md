@@ -166,17 +166,19 @@ network-secured template, adapted for this workload. It creates
 
 - A new Foundry account and project injected into a dedicated BYO VNet
 - A delegated `/24` agent subnet and private-endpoint subnet
-- Private Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
+- Private endpoints for Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
 - A Container Apps intake API and separate private Cosmos DB account
 - Private endpoints and linked Private DNS zones
 - A `gpt-5.6-sol` model deployment
 - Optional Azure Bastion and private Windows Server administration VM
 
-The agent subnet permits public outbound traffic. Foundry inbound access uses
-two paths: a private endpoint inside the VNet and a public endpoint restricted
-to one narrow deployer CIDR rule. The current corporate egress pool uses
-`85.210.10.184/29`, which includes the supplied `85.210.10.186` address.
-Cosmos DB, Search, Storage, and ACR remain private.
+The agent subnet permits public outbound traffic. Foundry, both Cosmos DB
+accounts, Azure AI Search, Storage, and ACR retain their private endpoints and
+also enable public access through selected-network rules restricted to
+`85.210.10.0/24`. ACL defaults remain deny, local/key authentication remains
+disabled where already configured, and each template-created service carries
+the `SecurityControl=Ignore` tag. Externally supplied existing resources are
+referenced but not retagged or reconfigured.
 
 The current `maf-poc-byo` environment sets `AZURE_DEPLOY_ADMIN_ACCESS=false`
 because this subscription has no deployable VM SKU in UK South. This does not
@@ -187,14 +189,14 @@ Run preflight without provisioning or deleting resources:
 ```powershell
 .\scripts\deploy_byo.ps1 `
   -PreflightOnly `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>"
 ```
 
-The script can query an approved Microsoft or enterprise IP-echo endpoint passed
-with `-IpDetectionEndpoint` or `PUBLIC_IP_ECHO_ENDPOINT`. If detection is not
-configured, unavailable, or ambiguous, it stops and requires
-`-AllowedClientIp`; it never creates an allow-all rule.
+The script defaults `-AllowedClientIp` to `85.210.10.0/24`. An explicitly
+approved public IPv4 address or `/24`-through-`/32` CIDR can override the
+default. If the parameter is explicitly empty, the script can query an approved
+Microsoft or enterprise IP-echo endpoint passed with `-IpDetectionEndpoint` or
+`PUBLIC_IP_ECHO_ENDPOINT`; it never creates an allow-all rule.
 
 UK South currently requires capacity to be released from the former deployment.
 The destructive switch is guarded so it can delete only
@@ -202,7 +204,6 @@ The destructive switch is guarded so it can delete only
 
 ```powershell
 .\scripts\deploy_byo.ps1 `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
   -DeleteOldResourceGroup
 ```
@@ -215,10 +216,10 @@ The new Cosmos history and intake containers start empty; the hosted agent
 rebuilds the Search index from `data/knowledge`.
 
 The intake image is built locally because the ACR data plane is network
-restricted. During deployment the workflow applies the same narrow client CIDR
-to ACR, pushes the image, and leaves the registry private-endpoint enabled. Run
-the workflow from that allowlisted address or from a host with private VNet
-connectivity; it never enables unrestricted registry access.
+restricted. During deployment the workflow applies the same client CIDR to ACR, pushes the
+image, and leaves the registry private endpoint enabled. Run the workflow from
+that allowlisted range or from a host with private VNet connectivity; it never
+enables unrestricted registry access.
 
 The separate serverless Cosmos account, Container Apps environment, and running
 replicas add Azure cost independently of the hosted agent. The default API scale
@@ -231,7 +232,6 @@ the local azd environment without being printed. Supply a secure value instead:
 ```powershell
 $password = Read-Host "Admin VM recovery password" -AsSecureString
 .\scripts\deploy_byo.ps1 `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
   -AdminVmPassword $password `
   -DeleteOldResourceGroup
@@ -690,7 +690,7 @@ Foundry dataset tags. If local content changes, choose a new
 `--dataset-version`; the script refuses to reuse a version whose content cannot
 be verified.
 
-Authenticate to the deployment tenant from the single allowlisted client `/32`
+Authenticate to the deployment tenant from the allowlisted `85.210.10.0/24`
 or an approved private-network host, select the deployed azd environment, and
 load its values:
 
@@ -981,8 +981,9 @@ azd deploy --environment maf-poc-byo
 
 Hosted agent deployment is complete only after the final version starts with
 dependency checks enabled and `validate_byo_deployment.ps1` confirms grounded
-Search output, Cosmos write/read/delete access, private endpoint approvals, DNS
-links, network injection, and the exact Foundry client IP rule.
+Search output, Cosmos write/read/delete access, `SecurityControl=Ignore` tags,
+private endpoint approvals, DNS links, network injection, and the exact
+selected-network CIDR rules.
 
 To retire a failed BYO deployment safely, delete the project capability host
 before the account capability host or account, purge the deleted Foundry

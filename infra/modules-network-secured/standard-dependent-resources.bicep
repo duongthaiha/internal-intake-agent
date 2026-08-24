@@ -29,6 +29,12 @@ param aiSearchExists bool
 param azureStorageExists bool
 param cosmosDBExists bool
 
+@description('Client IPv4 CIDR allowed through selected-network rules on template-created dependencies.')
+param allowedClientIpCidr string
+
+@description('Tags applied to template-created dependency resources.')
+param resourceTags object
+
 var cosmosParts = split(cosmosDBResourceId, '/')
 
 resource existingCosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = if (cosmosDBExists) {
@@ -43,6 +49,7 @@ var cosmosDbRegion = contains(canaryRegions, location) ? 'westus' : location
 resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = if(!cosmosDBExists) {
   name: cosmosDBName
   location: cosmosDbRegion
+  tags: resourceTags
   kind: 'GlobalDocumentDB'
   properties: {
     consistencyPolicy: {
@@ -51,7 +58,12 @@ resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = if(!cosmo
     disableLocalAuth: true
     enableAutomaticFailover: false
     enableMultipleWriteLocations: false
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    ipRules: [
+      {
+        ipAddressOrRange: allowedClientIpCidr
+      }
+    ]
     enableFreeTier: false
     locations: [
       {
@@ -76,6 +88,7 @@ resource existingSearchService 'Microsoft.Search/searchServices@2024-06-01-previ
 resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if(!aiSearchExists) {
   name: aiSearchName
   location: location
+  tags: resourceTags
   identity: {
     type: 'SystemAssigned'
   }
@@ -87,12 +100,16 @@ resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if(!aiS
     }
     hostingMode: 'default'
     partitionCount: 1
-    publicNetworkAccess: 'disabled'
+    publicNetworkAccess: 'enabled'
     replicaCount: 1
     semanticSearch: 'disabled'
     networkRuleSet: {
       bypass: 'None'
-      ipRules: []
+      ipRules: [
+        {
+          value: allowedClientIpCidr
+        }
+      ]
     }
   }
   sku: {
@@ -116,15 +133,22 @@ param sku object = contains(noZRSRegions, location) ? { name: 'Standard_GRS' } :
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = if(!azureStorageExists) {
   name: azureStorageName
   location: location
+  tags: resourceTags
   kind: 'StorageV2'
   sku: sku
   properties: {
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
+      ipRules: [
+        {
+          action: 'Allow'
+          value: allowedClientIpCidr
+        }
+      ]
       virtualNetworkRules: []
     }
     allowSharedKeyAccess: false

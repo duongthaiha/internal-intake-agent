@@ -13,9 +13,12 @@ param networkInjection string = 'true'
 // account also allows public inbound from one narrow client IPv4 CIDR rule.
 // Network ACL default action stays Deny so only the allowlisted IP (and private
 // endpoint traffic) reach the account.
-@description('One narrow client IPv4 CIDR (/29-/32) allowed to reach the Foundry account over its public endpoint. The private endpoint remains the primary path.')
+@description('Client IPv4 CIDR allowed to reach the Foundry account over its public endpoint. The private endpoint remains the primary path.')
 param allowedClientIpCidr string
 var allowedClientIp = replace(allowedClientIpCidr, '/32', '')
+
+@description('Tags applied to the template-created Foundry account.')
+param resourceTags object
 
 // True BYO Foundry account.
 // When existingAccountResourceId is set, reference the existing AI Foundry
@@ -37,6 +40,7 @@ var existingAccountName = useExistingAccount ? last(existingParts) : accountName
 resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = if (!useExistingAccount) {
   name: accountName
   location: location
+  tags: resourceTags
   sku: {
     name: 'S0'
   }
