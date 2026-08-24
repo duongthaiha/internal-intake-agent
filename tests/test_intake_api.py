@@ -2,6 +2,7 @@ import json
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -9,6 +10,8 @@ from intake_api.app import create_app
 from intake_api.config import IntakeSettings
 from intake_api.models import IntakeRecord, Principal, RequestStatus
 from intake_api.repository import (
+    InvalidContinuationTokenError,
+    RecordConflictError,
     RecordNotFoundError,
     RecordPage,
     RecordPreconditionError,
@@ -51,6 +54,8 @@ class FakeRepository:
         self.version = 0
 
     async def create(self, record: IntakeRecord) -> IntakeRecord:
+        if (record.tenant_id, record.id) in self.items:
+            raise RecordConflictError("Intake request already exists.")
         return self._store(record)
 
     async def get(self, tenant_id: str, request_id: str) -> IntakeRecord:
@@ -77,7 +82,12 @@ class FakeRepository:
                 request_status is None or record.status is request_status
             )
         ]
-        offset = int(continuation_token or "0")
+        try:
+            offset = int(continuation_token or "0")
+        except ValueError as exc:
+            raise InvalidContinuationTokenError(
+                "The continuation token is invalid for this request."
+            ) from exc
         next_offset = offset + limit
         return RecordPage(
             items=records[offset:next_offset],
@@ -143,14 +153,26 @@ class IntakeApiTests(unittest.TestCase):
     def auth(caller: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {caller}"}
 
-    def create(self) -> tuple[dict, str]:
+    def create(
+        self,
+        *,
+        caller: str = "owner",
+        idempotency_key: str | None = None,
+        payload: dict | None = None,
+    ) -> tuple[dict, str]:
+        headers = self.auth(caller)
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
         response = self.client.post(
             "/v1/intake-requests",
-            headers=self.auth("owner"),
-            json=self.payload,
+            headers=headers,
+            json=self.payload if payload is None else payload,
         )
         self.assertEqual(201, response.status_code, response.text)
-        self.assertEqual(response.headers["location"], f"/v1/intake-requests/{response.json()['id']}")
+        self.assertEqual(
+            response.headers["location"],
+            f"/v1/intake-requests/{response.json()['id']}",
+        )
         return response.json(), response.headers["etag"]
 
     def test_create_get_replace_and_submit(self) -> None:
@@ -198,6 +220,77 @@ class IntakeApiTests(unittest.TestCase):
         self.assertEqual(200, repeated.status_code)
         self.assertEqual(submitted.json(), repeated.json())
 
+        retry_after_unknown_outcome = self.client.post(
+            f"/v1/intake-requests/{request_id}/submit",
+            headers={
+                **self.auth("owner"),
+                "If-Match": replaced.headers["etag"],
+            },
+        )
+        self.assertEqual(200, retry_after_unknown_outcome.status_code)
+        self.assertEqual(submitted.json(), retry_after_unknown_outcome.json())
+
+    def test_create_is_idempotent_when_key_is_supplied(self) -> None:
+        first, first_etag = self.create(idempotency_key="retry-key-1")
+        reordered_payload = dict(reversed(list(self.payload.items())))
+        replayed, replayed_etag = self.create(
+            idempotency_key="retry-key-1",
+            payload=reordered_payload,
+        )
+
+        self.assertEqual(first, replayed)
+        self.assertEqual(first_etag, replayed_etag)
+        self.assertEqual(1, len(self.repository.items))
+        UUID(first["id"])
+        persisted = next(iter(self.repository.items.values()))
+        self.assertIsNotNone(persisted.idempotency_key_hash)
+        self.assertIsNotNone(persisted.request_fingerprint)
+        self.assertNotIn("retry-key-1", persisted.model_dump_json())
+
+    def test_idempotency_key_reuse_and_scoping(self) -> None:
+        owner, _ = self.create(idempotency_key="retry-key-2")
+        changed = deepcopy(self.payload)
+        changed["title"] = "A different request using the same key"
+        conflict = self.client.post(
+            "/v1/intake-requests",
+            headers={
+                **self.auth("owner"),
+                "Idempotency-Key": "retry-key-2",
+            },
+            json=changed,
+        )
+        self.assertEqual(409, conflict.status_code)
+        self.assertEqual(
+            "IdempotencyKeyReuse",
+            conflict.headers["x-ms-error-code"],
+        )
+        self.assertEqual(
+            "urn:internal-intake:problem:IdempotencyKeyReuse",
+            conflict.json()["type"],
+        )
+        self.assertNotIn("retry-key-2", conflict.text)
+
+        other, _ = self.create(
+            caller="other",
+            idempotency_key="retry-key-2",
+        )
+        self.assertNotEqual(owner["id"], other["id"])
+
+        unkeyed_first, _ = self.create()
+        unkeyed_second, _ = self.create()
+        self.assertNotEqual(unkeyed_first["id"], unkeyed_second["id"])
+
+        invalid = self.client.post(
+            "/v1/intake-requests",
+            headers={
+                **self.auth("owner"),
+                "Idempotency-Key": "contains whitespace",
+            },
+            json=self.payload,
+        )
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual("InvalidRequest", invalid.headers["x-ms-error-code"])
+
     def test_rejects_invalid_payload_and_missing_or_stale_etag(self) -> None:
         invalid = self.client.post(
             "/v1/intake-requests",
@@ -205,7 +298,14 @@ class IntakeApiTests(unittest.TestCase):
             json={"title": "Too little"},
         )
         self.assertEqual(400, invalid.status_code)
-        self.assertEqual("application/problem+json", invalid.headers["content-type"])
+        self.assertEqual(
+            "application/problem+json",
+            invalid.headers["content-type"],
+        )
+        self.assertEqual(
+            "InvalidIntakeRequest",
+            invalid.headers["x-ms-error-code"],
+        )
 
         created, _ = self.create()
         request_id = created["id"]
@@ -222,6 +322,27 @@ class IntakeApiTests(unittest.TestCase):
             json=self.payload,
         )
         self.assertEqual(412, stale.status_code)
+        self.assertEqual(
+            "PreconditionFailed",
+            stale.headers["x-ms-error-code"],
+        )
+
+    def test_get_supports_if_none_match(self) -> None:
+        created, etag = self.create()
+        response = self.client.get(
+            f"/v1/intake-requests/{created['id']}",
+            headers={
+                **self.auth("owner"),
+                "If-None-Match": etag,
+            },
+        )
+        self.assertEqual(304, response.status_code)
+        self.assertEqual("", response.text)
+        self.assertEqual(etag, response.headers["etag"])
+        self.assertEqual(
+            "private, no-cache",
+            response.headers["cache-control"],
+        )
 
     def test_owner_isolation_and_privileged_access(self) -> None:
         created, etag = self.create()
@@ -312,6 +433,76 @@ class IntakeApiTests(unittest.TestCase):
                 "400"
             ]["content"],
         )
+        for path_item in document["paths"].values():
+            for operation in path_item.values():
+                if (
+                    not isinstance(operation, dict)
+                    or "operationId" not in operation
+                ):
+                    continue
+                self.assertNotIn("422", operation["responses"])
+                for response in operation["responses"].values():
+                    if "application/problem+json" in response.get("content", {}):
+                        self.assertIn("x-ms-error-code", response["headers"])
+
+        create_operation = document["paths"]["/v1/intake-requests"]["post"]
+        self.assertEqual(
+            {"201", "400", "401", "403", "409", "429", "500", "503"},
+            set(create_operation["responses"]),
+        )
+        self.assertEqual(
+            {"ETag", "Location"},
+            set(create_operation["responses"]["201"]["headers"]),
+        )
+        self.assertTrue(
+            any(
+                parameter["name"] == "Idempotency-Key"
+                for parameter in create_operation["parameters"]
+            )
+        )
+
+        get_operation = document["paths"][
+            "/v1/intake-requests/{request_id}"
+        ]["get"]
+        self.assertIn("304", get_operation["responses"])
+        request_id = next(
+            parameter
+            for parameter in get_operation["parameters"]
+            if parameter["name"] == "request_id"
+        )
+        self.assertEqual("uuid", request_id["schema"]["format"])
+
+        replace_operation = document["paths"][
+            "/v1/intake-requests/{request_id}"
+        ]["put"]
+        if_match = next(
+            parameter
+            for parameter in replace_operation["parameters"]
+            if parameter["name"] == "If-Match"
+        )
+        self.assertTrue(if_match["required"])
+        self.assertEqual({"type": "string"}, if_match["schema"])
+        submit = document["paths"][
+            "/v1/intake-requests/{request_id}/submit"
+        ]["post"]
+        submit_if_match = next(
+            parameter
+            for parameter in submit["parameters"]
+            if parameter["name"] == "If-Match"
+        )
+        self.assertTrue(submit_if_match["required"])
+
+        response_schema = document["components"]["schemas"][
+            "IntakeRecordResponse"
+        ]
+        self.assertEqual(
+            {"$ref": "#/components/schemas/IntakeRequest"},
+            response_schema["properties"]["intake"],
+        )
+        self.assertNotEqual(
+            False,
+            response_schema.get("additionalProperties"),
+        )
 
     def test_list_paginates_with_opaque_continuation_token(self) -> None:
         self.create()
@@ -334,6 +525,16 @@ class IntakeApiTests(unittest.TestCase):
             first.json()["items"][0]["id"], second.json()["items"][0]["id"]
         )
         self.assertIsNone(second.json()["continuationToken"])
+
+        invalid = self.client.get(
+            "/v1/intake-requests?continuationToken=modified",
+            headers=self.auth("owner"),
+        )
+        self.assertEqual(400, invalid.status_code)
+        self.assertEqual(
+            "InvalidContinuationToken",
+            invalid.headers["x-ms-error-code"],
+        )
 
     def _assert_all_references_resolve(self, document: dict) -> None:
         def resolve(reference: str) -> object:

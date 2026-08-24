@@ -22,6 +22,10 @@ class RecordPreconditionError(RuntimeError):
     pass
 
 
+class InvalidContinuationTokenError(RuntimeError):
+    pass
+
+
 class RepositoryUnavailableError(RuntimeError):
     pass
 
@@ -154,6 +158,10 @@ class CosmosIntakeRepository:
         except StopAsyncIteration:
             return RecordPage(items=[], continuation_token=None)
         except exceptions.CosmosHttpResponseError as exc:
+            if exc.status_code == 400 and continuation_token is not None:
+                raise InvalidContinuationTokenError(
+                    "The continuation token is invalid for this request."
+                ) from exc
             raise _translate_unavailable(exc) from exc
         return RecordPage(items=items, continuation_token=next_token)
 

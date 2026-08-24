@@ -7,6 +7,7 @@ from azure.cosmos import exceptions
 from intake_api.models import IntakeRecord, RequestStatus
 from intake_api.repository import (
     CosmosIntakeRepository,
+    InvalidContinuationTokenError,
     RepositoryOperationError,
     RepositoryThrottledError,
     RepositoryUnavailableError,
@@ -70,6 +71,22 @@ class PagedQuery:
         return AsyncPages(self._items)
 
 
+class ErrorPages:
+    def __aiter__(self) -> "ErrorPages":
+        return self
+
+    async def __anext__(self) -> AsyncItems:
+        raise exceptions.CosmosHttpResponseError(
+            status_code=400,
+            message="invalid continuation",
+        )
+
+
+class ErrorPagedQuery:
+    def by_page(self, continuation_token: str | None = None) -> ErrorPages:
+        return ErrorPages()
+
+
 class FakeContainer:
     def __init__(self) -> None:
         self.query: str | None = None
@@ -124,6 +141,20 @@ class CosmosRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("prior-page", container.paged_query.received_token)
         self.assertEqual("next-page", page.continuation_token)
         self.assertEqual(1, len(page.items))
+
+    async def test_invalid_continuation_token_is_a_client_error(self) -> None:
+        container = FakeContainer()
+        container.paged_query = ErrorPagedQuery()
+        repository = CosmosIntakeRepository(None, None, container)
+
+        with self.assertRaises(InvalidContinuationTokenError):
+            await repository.list(
+                "tenant-a",
+                created_by="owner-a",
+                request_status=None,
+                limit=10,
+                continuation_token="modified",
+            )
 
     def test_cosmos_errors_preserve_retry_semantics(self) -> None:
         throttled = exceptions.CosmosHttpResponseError(

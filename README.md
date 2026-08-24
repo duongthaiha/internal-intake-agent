@@ -81,8 +81,28 @@ Create and update bodies use the intake JSON Schema directly. Responses add the
 request ID, status, schema version, and audit timestamps. Create, read, update,
 and submit responses include an `ETag`; mutating an existing record requires
 that value in `If-Match`. Missing and stale preconditions return `428` and
-`412`, respectively. Submitted requests are immutable, and repeated submission
-is idempotent. Errors use `application/problem+json`.
+`412`, respectively. A read can send `If-None-Match` and receives `304` when its
+cached ETag is still current. Submitted requests are immutable, and retrying a
+submission after an unknown outcome returns the submitted representation.
+
+Create accepts an optional `Idempotency-Key` header. The key is scoped to the
+tenant and authenticated caller and remains reserved for the lifetime of the
+intake record. Retrying the same validated payload with the same key returns the
+original resource, `Location`, and `ETag`; using the key for a different payload
+returns `409`. Keys must contain 1-255 visible ASCII characters, must not contain
+sensitive information, and must not be reused. Clients that omit the header keep
+the existing behavior where each POST creates a new draft.
+
+This API uses `Idempotency-Key` for generic HTTP and APIM MCP client ergonomics.
+The Microsoft Azure REST API Guidelines prescribe the paired
+`Repeatability-Request-ID` and `Repeatability-First-Sent` protocol for formal
+Azure data-plane APIs; supporting both protocols in v1 would create ambiguous
+retry semantics, so that alternative is deferred to a future API version.
+
+Errors use RFC 9457-style `application/problem+json` bodies and include a stable
+`x-ms-error-code` response header. Authentication failures include
+`WWW-Authenticate`, persistence throttling includes `Retry-After`, and the
+OpenAPI contract documents these headers.
 
 Every route requires a Microsoft Entra ID access token. Configure one app
 registration for the API with:
