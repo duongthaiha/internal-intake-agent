@@ -102,7 +102,7 @@ resource aiSearch 'Microsoft.Search/searchServices@2024-06-01-preview' = if(!aiS
     partitionCount: 1
     publicNetworkAccess: 'enabled'
     replicaCount: 1
-    semanticSearch: 'disabled'
+    semanticSearch: 'free'
     networkRuleSet: {
       bypass: 'None'
       ipRules: [
