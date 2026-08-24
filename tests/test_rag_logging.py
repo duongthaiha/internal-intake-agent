@@ -1,9 +1,11 @@
 import unittest
 from collections import Counter
+from pathlib import Path
 
 from agent_framework import Message
 
 from agents.hosted.rag import (
+    InMemoryRagContextProvider,
     KnowledgeChunk,
     _log_knowledge_chunks,
     _log_message_chunks,
@@ -38,6 +40,19 @@ class RagLoggingTests(unittest.TestCase):
 
         self.assertIn("source=guide-md-1", logs.output[0])
         self.assertIn("chunk=Retrieved chunk text.", logs.output[0])
+
+    def test_in_memory_ranking_does_not_reward_repeated_boilerplate(self) -> None:
+        provider = InMemoryRagContextProvider(Path("data/knowledge"))
+
+        results = provider.search(
+            "Who must be involved when a Contoso University IT incident may be "
+            "a personal data breach?"
+        )
+
+        self.assertEqual(
+            results[0].chunk_id,
+            "contoso-it-incident-response-sop.md#5",
+        )
 
 
 if __name__ == "__main__":
