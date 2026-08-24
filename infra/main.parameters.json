@@ -116,12 +116,6 @@
     "intakeContainerAppsSubnetPrefix": {
       "value": "${AZURE_INTAKE_CONTAINER_APPS_SUBNET_PREFIX=192.168.4.0/23}"
     },
-    "intakeApimSubnetResourceId": {
-      "value": "${AZURE_INTAKE_APIM_SUBNET_ID=}"
-    },
-    "intakeApimSubnetPrefix": {
-      "value": "${AZURE_INTAKE_APIM_SUBNET_PREFIX=192.168.6.0/24}"
-    },
     "intakeApimPublisherName": {
       "value": "${AZURE_INTAKE_APIM_PUBLISHER_NAME=Internal Intake Platform}"
     },

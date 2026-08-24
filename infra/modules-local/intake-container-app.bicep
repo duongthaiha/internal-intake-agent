@@ -49,6 +49,9 @@ param applicationInsightsConnectionString string
 @description('Application log level.')
 param logLevel string
 
+@description('Public IPv4 CIDR allowed to reach the intake API.')
+param allowedIngressIpCidr string
+
 @description('Minimum number of intake API replicas.')
 @minValue(0)
 param minReplicas int = 1
@@ -70,7 +73,7 @@ resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
   name: environmentName
   location: location
   properties: {
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     vnetConfiguration: {
       infrastructureSubnetId: infrastructureSubnetId
       internal: false
@@ -99,6 +102,14 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         allowInsecure: false
         targetPort: 8000
         transport: 'Auto'
+        ipSecurityRestrictions: [
+          {
+            name: 'allow-apim'
+            description: 'Allow the public API Management gateway.'
+            ipAddressRange: allowedIngressIpCidr
+            action: 'Allow'
+          }
+        ]
       }
       registries: useContainerRegistry ? [
         {

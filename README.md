@@ -151,11 +151,11 @@ token for `INTAKE_ENTRA_AUDIENCE`, rate limits the caller, and forwards the same
 bearer token to the intake API. The API remains the authority for delegated
 scope, application role, tenant, and record-owner checks.
 
-The intake Container Apps environment disables public network access and has a
-private endpoint in the workload VNet. APIM Standard v2 remains public and uses
-outbound VNet integration plus linked private DNS to reach the private ACA FQDN.
-The ACA URL emitted for deployment wiring is not reachable from the public
-internet.
+The intake Container Apps environment exposes public HTTPS ingress, restricted
+to the dedicated public IP addresses of the APIM instance. APIM uses the
+Developer tier without VNet injection and reaches the public ACA FQDN. Both
+layers still validate the Microsoft Entra bearer token, so APIM cannot weaken
+the API's tenant, scope, role, or record-owner authorization.
 
 REST-to-MCP projection currently exposes tools, not MCP resources or prompts,
 and is not supported in APIM workspaces. Avoid APIM policies or global
@@ -198,8 +198,8 @@ network-secured template, adapted for this workload. It creates
 - A delegated `/24` agent subnet and private-endpoint subnet
 - Private endpoints for Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
 - A dedicated private Storage account and blob container for Foundry IQ sources
-- A private-endpoint-only Container Apps intake API and separate private Cosmos DB account
-- A public APIM Standard v2 gateway with outbound VNet integration and five intake MCP tools
+- A public Container Apps intake API restricted to APIM IP addresses and a separate private Cosmos DB account
+- A public APIM Developer gateway with five intake MCP tools
 - Private endpoints and linked Private DNS zones
 - A `gpt-5.6-sol` model deployment
 - Foundry IQ chat and embedding model deployments
@@ -263,11 +263,11 @@ image, and leaves the registry private endpoint enabled. Run the workflow from
 that allowlisted range or from a host with private VNet connectivity; it never
 enables unrestricted registry access.
 
-The separate serverless Cosmos account, Container Apps environment, private
-endpoint infrastructure, running replicas, and APIM Standard v2 instance add
-Azure cost independently of the hosted agent. The default API scale keeps one
-replica warm and permits five; lower `intakeApiMinReplicas` only after accepting
-cold starts.
+The separate serverless Cosmos account, Container Apps environment, running
+replicas, and APIM Developer instance add Azure cost independently of the hosted
+agent. Developer APIM is intended only for non-production use and has no SLA.
+The default API scale keeps one replica warm and permits five; lower
+`intakeApiMinReplicas` only after accepting cold starts.
 
 The one-time administration VM password is generated when omitted and stored in
 the local azd environment without being printed. Supply a secure value instead:
@@ -459,12 +459,6 @@ when creating the dedicated subnet and defaults to `192.168.4.0/23`.
 subnet resource ID; leave it empty for a new VNet and set it when existing VNet
 subnets must not be changed.
 
-`AZURE_INTAKE_APIM_SUBNET_PREFIX` defaults to `192.168.6.0/24`.
-`AZURE_INTAKE_APIM_SUBNET_ID` optionally supplies an existing dedicated subnet
-with an NSG and `Microsoft.Web/serverFarms` delegation. APIM Standard v2 requires
-the VNet and subnet to be in the same region and subscription as APIM. The
-existing subnet must belong to this deployment's workload VNet so it receives
-the linked ACA private DNS zone.
 `AZURE_INTAKE_APIM_PUBLISHER_NAME` is non-sensitive and defaults to
 `Internal Intake Platform`; `AZURE_INTAKE_APIM_PUBLISHER_EMAIL` is required.
 `INTAKE_MCP_RATE_LIMIT_CALLS` and `INTAKE_MCP_RATE_LIMIT_RENEWAL_PERIOD` are
@@ -474,8 +468,8 @@ non-sensitive integers and default to 60 calls per 60 seconds.
 `INTAKE_ENTRA_AUDIENCE`) and `-IntakeApimPublisherEmail` (or
 `AZURE_INTAKE_APIM_PUBLISHER_EMAIL`). It records both non-secret values in the
 selected azd environment. When reusing a VNet that must not be modified, supply
-both existing intake and APIM subnet IDs; otherwise the template creates the
-dedicated subnets.
+the existing intake subnet ID; otherwise the template creates the dedicated
+Container Apps subnet.
 
 The Cosmos container uses `/session_id` as its partition key.
 

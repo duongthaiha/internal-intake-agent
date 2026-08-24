@@ -1,19 +1,7 @@
-@description('Azure region for API Management.')
-param location string
-
-@description('Globally unique API Management service name.')
+@description('Name of the existing API Management service.')
 param serviceName string
 
-@description('API publisher display name.')
-param publisherName string
-
-@description('API publisher email address.')
-param publisherEmail string
-
-@description('Resource ID of the dedicated API Management outbound integration subnet.')
-param integrationSubnetId string
-
-@description('Private HTTPS URL of the intake Container App.')
+@description('Public HTTPS URL of the intake Container App.')
 param intakeBackendUrl string
 
 @description('Microsoft Entra tenant accepted by the intake API and MCP endpoint.')
@@ -29,9 +17,6 @@ param rateLimitCalls int = 60
 @description('MCP rate-limit window in seconds.')
 @minValue(1)
 param rateLimitRenewalPeriod int = 60
-
-@description('Tags applied to API Management.')
-param resourceTags object = {}
 
 var intakeApiId = 'intake-api'
 var intakeMcpId = 'intake-mcp'
@@ -78,25 +63,8 @@ var mcpPolicyWithAudience = replace(mcpPolicyWithTenant, '__AUDIENCE__', entraAu
 var mcpPolicyWithRateCalls = replace(mcpPolicyWithAudience, '__RATE_CALLS__', string(rateLimitCalls))
 var mcpPolicy = replace(mcpPolicyWithRateCalls, '__RATE_PERIOD__', string(rateLimitRenewalPeriod))
 
-resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
+resource apim 'Microsoft.ApiManagement/service@2024-05-01' existing = {
   name: serviceName
-  location: location
-  tags: resourceTags
-  sku: {
-    name: 'StandardV2'
-    capacity: 1
-  }
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    publisherEmail: publisherEmail
-    publisherName: publisherName
-    publicNetworkAccess: 'Enabled'
-    virtualNetworkConfiguration: {
-      subnetResourceId: integrationSubnetId
-    }
-  }
 }
 
 resource intakeApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
@@ -136,6 +104,7 @@ resource intakeMcp 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   ]
 }
 
+@batchSize(1)
 resource intakeTools 'Microsoft.ApiManagement/service/apis/tools@2025-09-01-preview' = [
   for (operationId, index) in operationIds: {
     parent: intakeMcp

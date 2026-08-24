@@ -19,10 +19,10 @@
         the model deployment name and the expected knowledge source), which
         also proves the Cosmos DB and Search startup checks passed.
       - The intake API uses a separate Cosmos DB account, has the expected
-        container-scoped data role, private-only environment ingress, and
+        container-scoped data role, public ingress restricted to APIM, and
         configured liveness/readiness probes.
-      - Public APIM Standard v2 uses outbound VNet integration and exposes the
-        five intake operations as Entra-protected MCP tools.
+      - Public APIM Developer exposes the five intake operations as
+        Entra-protected MCP tools.
     No `az cognitiveservices account managed-network *` calls are made.
 #>
 param(
@@ -257,8 +257,12 @@ if (
 ) {
     throw "Intake Container App must use external HTTPS ingress on port 8000 and one user-assigned managed identity."
 }
-if ($intakeEnvironment.properties.publicNetworkAccess -ne "Disabled") {
-    throw "Intake Container Apps environment publicNetworkAccess must be Disabled."
+if ($intakeEnvironment.properties.publicNetworkAccess -ne "Enabled") {
+    throw "Intake Container Apps environment publicNetworkAccess must be Enabled."
+}
+$intakeIngressRules = @($intakeApp.properties.configuration.ingress.ipSecurityRestrictions)
+if ($intakeIngressRules.Count -eq 0 -or @($intakeIngressRules | Where-Object { $_.action -ne "Allow" }).Count -gt 0) {
+    throw "Intake Container App ingress must use explicit APIM-only allow rules."
 }
 $intakePrincipalId = $intakeIdentityEntries[0].Value.principalId
 $intakeImage = $intakeApp.properties.template.containers[0].image
@@ -306,22 +310,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 Assert-SecurityControlTag -Resource $intakeApim -DisplayName "API Management '$intakeApimName'"
 if (
-    $intakeApim.sku.name -ne "StandardV2" -or
+    $intakeApim.sku.name -ne "Developer" -or
     $intakeApim.publicNetworkAccess -ne "Enabled" -or
-    [string]::IsNullOrWhiteSpace($intakeApim.virtualNetworkConfiguration.subnetResourceId)
+    $intakeApim.virtualNetworkType -ne "None"
 ) {
-    throw "API Management must use StandardV2, public gateway access, and outbound VNet integration."
+    throw "API Management must use the public Developer tier without VNet injection."
 }
-$apimSubnet = az network vnet subnet show --ids $intakeApim.virtualNetworkConfiguration.subnetResourceId --output json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    throw "Unable to inspect API Management integration subnet."
+$apimPublicIps = @($intakeApim.publicIpAddresses)
+if ($apimPublicIps.Count -eq 0) {
+    throw "API Management must expose at least one dedicated public IP address."
 }
-$apimDelegations = @($apimSubnet.delegations | ForEach-Object { $_.serviceName })
-if ($apimDelegations -notcontains "Microsoft.Web/serverFarms" -or -not $apimSubnet.networkSecurityGroup.id) {
-    throw "API Management integration subnet must have an NSG and Microsoft.Web/serverFarms delegation."
-}
-if ($apimSubnet.id -notlike "*/virtualNetworks/$vnetName/subnets/*") {
-    throw "API Management integration subnet must belong to workload VNet '$vnetName' for private ACA DNS resolution."
+$expectedIngressCidrs = @($apimPublicIps | ForEach-Object { "$_/32" } | Sort-Object)
+$actualIngressCidrs = @($intakeIngressRules | ForEach-Object { $_.ipAddressRange } | Sort-Object)
+if (
+    $actualIngressCidrs.Count -ne $expectedIngressCidrs.Count -or
+    (Compare-Object -ReferenceObject $expectedIngressCidrs -DifferenceObject $actualIngressCidrs)
+) {
+    throw "Intake Container App ingress must allow exactly the API Management public IP addresses."
 }
 
 $apimApiBase = "$($intakeApim.id)/apis"
@@ -331,7 +336,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect the intake REST API and MCP server in API Management."
 }
 if ($intakeRestApi.properties.serviceUrl -ne $intakeApiUri -or $intakeRestApi.properties.subscriptionRequired) {
-    throw "APIM intake REST API must target the private ACA URL without requiring a subscription key."
+    throw "APIM intake REST API must target the ACA URL without requiring a subscription key."
 }
 if ($intakeMcpApi.properties.type -ne "mcp" -or $intakeMcpApi.properties.subscriptionRequired) {
     throw "APIM intake MCP API must be type mcp without requiring a subscription key."
@@ -359,14 +364,25 @@ foreach ($toolName in $expectedMcpTools) {
         throw "Missing intake MCP tool '$toolName'."
     }
 }
-$mcpPolicy = az rest --method get --url "$apimApiBase/intake-mcp/policies/policy?api-version=2025-09-01-preview" --output json | ConvertFrom-Json
-if (
-    $LASTEXITCODE -ne 0 -or
-    $mcpPolicy.properties.value -notmatch "validate-azure-ad-token" -or
-    $mcpPolicy.properties.value -notmatch "rate-limit-by-key" -or
-    $mcpPolicy.properties.value -notmatch "set-header name=.Authorization."
-) {
-    throw "Intake MCP policy must validate Entra tokens, rate limit callers, and forward Authorization."
+$mcpPolicyPath = [System.IO.Path]::GetTempFileName()
+try {
+    az rest `
+        --method get `
+        --url "$apimApiBase/intake-mcp/policies/policy?api-version=2025-09-01-preview" `
+        --output-file $mcpPolicyPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect the intake MCP policy."
+    }
+    $mcpPolicyValue = Get-Content -LiteralPath $mcpPolicyPath -Raw -Encoding utf8
+    if (
+        $mcpPolicyValue -notmatch "validate-azure-ad-token" -or
+        $mcpPolicyValue -notmatch "rate-limit-by-key" -or
+        $mcpPolicyValue -notmatch "set-header name=.Authorization."
+    ) {
+        throw "Intake MCP policy must validate Entra tokens, rate limit callers, and forward Authorization."
+    }
+} finally {
+    Remove-Item -LiteralPath $mcpPolicyPath -Force -ErrorAction SilentlyContinue
 }
 
 if (-not [string]::IsNullOrWhiteSpace($intakeValidationBearerToken)) {
@@ -466,7 +482,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Unable to list private endpoints in '$resourceGroup'."
 }
 $expectedPeNames = @($expectedPeTargets | ForEach-Object { "$_-private-endpoint" })
-$expectedPeNames += "intake-container-apps-private-endpoint"
 $expectedPeNames += ($privateEndpoints | Where-Object { $_.name -like "ampls-tracing-*-pe" } | Select-Object -ExpandProperty name)
 foreach ($expectedPeName in $expectedPeNames) {
     if (@($privateEndpoints | Where-Object { $_.name -eq $expectedPeName }).Count -ne 1) {
@@ -494,7 +509,6 @@ $expectedDnsZones = @(
     "privatelink.search.windows.net",
     "privatelink.blob.core.windows.net",
     "privatelink.documents.azure.com",
-    "privatelink.$location.azurecontainerapps.io",
     "privatelink.monitor.azure.com",
     "privatelink.oms.opinsights.azure.com",
     "privatelink.ods.opinsights.azure.com",
@@ -557,5 +571,5 @@ Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
 Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
-Write-Output "Intake API: private ACA endpoint, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
-Write-Output "Intake MCP: public APIM Standard v2 gateway, outbound VNet integration, Entra policy, and five REST-backed tools verified at $intakeMcpServerUrl."
+Write-Output "Intake API: public ACA ingress restricted to APIM, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
+Write-Output "Intake MCP: public APIM Developer gateway, Entra policy, and five REST-backed tools verified at $intakeMcpServerUrl."
