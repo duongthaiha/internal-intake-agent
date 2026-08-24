@@ -275,10 +275,10 @@ param searchIndexName string = 'maf-poc-knowledge'
 param foundryIqContainerName string = 'knowledge'
 
 @description('Foundry IQ blob knowledge source name.')
-param foundryIqKnowledgeSourceName string = 'maf-poc-knowledge-source'
+param foundryIqKnowledgeSourceName string = 'ks-sop'
 
 @description('Foundry IQ knowledge base name.')
-param foundryIqKnowledgeBaseName string = 'maf-poc-knowledge-base'
+param foundryIqKnowledgeBaseName string = 'sop-kb'
 
 @description('ISO 8601 interval used for incremental Foundry IQ ingestion.')
 param foundryIqIngestionInterval string = 'PT1H'

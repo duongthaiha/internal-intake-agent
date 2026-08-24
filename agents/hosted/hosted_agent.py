@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from agents.hosted.agent import build_agent
 from agents.hosted.logging_config import configure_logging
+from agents.hosted.rag import verify_foundry_iq_access
 from agents.hosted.search_index import initialize_search_index
 
 
@@ -38,10 +39,37 @@ def get_required_setting(name: str) -> str:
 
 
 def initialize_rag() -> None:
+    provider_name = os.getenv("RAG_PROVIDER", "memory").lower()
+    if provider_name == "foundry_iq":
+        if get_boolean_setting("RAG_AUTO_INDEX", False):
+            raise RuntimeError(
+                "RAG_AUTO_INDEX must be false when RAG_PROVIDER=foundry_iq."
+            )
+        if not get_boolean_setting("FOUNDRY_IQ_STARTUP_CHECK", False):
+            logger.info("Foundry IQ startup connectivity check is disabled.")
+            return
+
+        credential = DefaultAzureCredential()
+        try:
+            verify_foundry_iq_access(
+                endpoint=get_required_setting("AZURE_SEARCH_ENDPOINT"),
+                knowledge_base_name=get_required_setting(
+                    "FOUNDRY_IQ_KNOWLEDGE_BASE_NAME"
+                ),
+                credential=credential,
+            )
+            logger.info("Foundry IQ startup connectivity check succeeded.")
+        except Exception:
+            logger.exception("Foundry IQ startup connectivity check failed.")
+            raise
+        finally:
+            credential.close()
+        return
+
     if not get_boolean_setting("RAG_AUTO_INDEX", False):
         logger.info("Azure AI Search startup indexing is disabled.")
         return
-    if os.getenv("RAG_PROVIDER", "memory").lower() != "azure_search":
+    if provider_name != "azure_search":
         raise RuntimeError(
             "RAG_AUTO_INDEX=true requires RAG_PROVIDER=azure_search."
         )

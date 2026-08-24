@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 from agents.hosted.history import ObservableCosmosHistoryProvider
 from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
-from agents.hosted.rag import build_rag_provider
+from agents.hosted.rag import FoundryIqContextProvider, build_rag_provider
 from agents.shared.instructions import load_intake_instructions
 
 
@@ -128,7 +128,10 @@ async def run_agent(prompt: str | None, session_id: str | None) -> None:
         await stack.enter_async_context(components.credential)
         if isinstance(components.history_provider, CosmosHistoryProvider):
             await stack.enter_async_context(components.history_provider)
-        if isinstance(components.rag_provider, AzureAISearchContextProvider):
+        if isinstance(
+            components.rag_provider,
+            (AzureAISearchContextProvider, FoundryIqContextProvider),
+        ):
             await stack.enter_async_context(components.rag_provider)
         agent = await stack.enter_async_context(components.agent)
 

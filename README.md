@@ -12,6 +12,8 @@ Retrieval-augmented generation is configurable:
 
 - `RAG_PROVIDER=memory` loads `.md` and `.txt` files from `data/knowledge`.
 - `RAG_PROVIDER=azure_search` injects results from Azure AI Search.
+- `RAG_PROVIDER=foundry_iq` retrieves from the configured Foundry IQ knowledge
+  base and is the hosted deployment default.
 - `RAG_PROVIDER=none` disables retrieval.
 
 ## Agent implementations
@@ -335,8 +337,8 @@ These non-sensitive azd outputs configure the workflow:
 | `FOUNDRY_IQ_STORAGE_ACCOUNT_ID` | Dedicated source Storage resource ID | Deployment output | Provisioning |
 | `FOUNDRY_IQ_STORAGE_BLOB_ENDPOINT` | Private Blob endpoint used for upload | Deployment output | Upload |
 | `FOUNDRY_IQ_STORAGE_CONTAINER_NAME` | Source blob container | `knowledge` | Upload and provisioning |
-| `FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME` | Search knowledge-source name | `maf-poc-knowledge-source` | Provisioning |
-| `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` | Search knowledge-base name | `maf-poc-knowledge-base` | Provisioning and validation |
+| `FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME` | Search knowledge-source name | `ks-sop` | Provisioning |
+| `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` | Search knowledge-base name used by provisioning and the hosted agent | `sop-kb` | Provisioning, validation, and hosted retrieval |
 | `FOUNDRY_IQ_INGESTION_INTERVAL` | ISO 8601 incremental refresh interval | `PT1H` | Provisioning |
 | `AZURE_MANAGE_FOUNDRY_IQ_SEARCH_PRIVATE_LINKS` | Provision the Search-to-Blob shared link; setup then serially ensures the Search-to-Foundry link. Set `false` only to preserve links during recovery from a stuck Azure control-plane operation | `true` | Provisioning |
 | `FOUNDRY_IQ_OPENAI_ENDPOINT` | Foundry model endpoint | Deployment output | Provisioning |
@@ -502,13 +504,47 @@ RAG_TOP_K=3
 
 Documents are chunked and ranked in memory for every process. This mode requires
 no search service and is intended for local development and automated tests.
-Retrieved content is treated as trusted input and source names are included
-for citations.
+Retrieved content is treated as untrusted reference material and source names
+are included for citations.
+
+### Foundry IQ retrieval
+
+The hosted deployment retrieves through the Foundry IQ knowledge base created
+by `setup_foundry_iq.ps1`:
+
+```dotenv
+RAG_PROVIDER=foundry_iq
+AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
+FOUNDRY_IQ_KNOWLEDGE_BASE_NAME=sop-kb
+FOUNDRY_IQ_STARTUP_CHECK=true
+RAG_AUTO_INDEX=false
+```
+
+The provider calls the knowledge base `retrieve` action with a semantic intent
+and `DefaultAzureCredential`, injects its synthesized answer and source
+references before the hosted model call, and never logs the retrieved content.
+Semantic intents work with knowledge bases configured for minimal retrieval
+reasoning. A successful empty or uncited retrieval tells the agent that the
+knowledge is insufficient. Network, authorization, failed-source, and
+malformed-response errors fail the request instead of silently falling back to
+another provider.
+
+`FOUNDRY_IQ_STARTUP_CHECK` is a non-sensitive boolean (`true` or `false`,
+default `false`) that verifies the configured knowledge base before the hosted
+server starts. It is optional locally and enabled in Azure through
+`DEPENDENCY_STARTUP_CHECKS`. `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` is a non-sensitive
+resource identifier, required whenever `RAG_PROVIDER=foundry_iq`.
+
+The hosted identity needs **Search Index Data Reader** on the Search service.
+The existing deployment role-assignment workflow already grants this role.
+Retrieval uses the existing private Search endpoint and Search-to-Foundry
+shared private link; it adds no public network path or key-based authentication.
 
 ### Azure AI Search retrieval
 
-For local testing against Azure AI Search, use a host with private connectivity,
-copy the generated endpoint from `azd env get-values` into `.env`, and run:
+The custom Search index provider remains available for compatibility and local
+testing. Use a host with private connectivity, copy the generated endpoint from
+`azd env get-values` into `.env`, and run:
 
 ```powershell
 python -m scripts.index_documents
@@ -523,10 +559,11 @@ AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge
 RAG_TOP_K=3
 ```
 
-The hosted agent creates or updates the index and upserts `data/knowledge`
-during startup. Startup fails instead of silently running without RAG if Search
-is unavailable. The same startup gate writes, reads, and deletes a Cosmos DB
-sentinel item to verify network and RBAC access before serving requests.
+When `RAG_PROVIDER=azure_search` and `RAG_AUTO_INDEX=true`, the agent creates or
+updates the custom index and upserts `data/knowledge` during startup. This path
+is disabled for the hosted Foundry IQ deployment. The same dependency gate
+writes, reads, and deletes a Cosmos DB sentinel item to verify network and RBAC
+access before serving requests.
 Azure AI Search citations use the indexed document identifier, such as
 `maf-poc-md-1`, which retains the source name in a Search-safe form.
 
@@ -577,6 +614,16 @@ $env:HISTORY_PROVIDER = "memory"
 $env:RAG_PROVIDER = "memory"
 ```
 
+To test Foundry IQ locally from a machine with private Search connectivity:
+
+```powershell
+$env:AZURE_SEARCH_ENDPOINT = azd env get-value AZURE_SEARCH_ENDPOINT --environment {azd-env-name}
+$env:FOUNDRY_IQ_KNOWLEDGE_BASE_NAME = azd env get-value FOUNDRY_IQ_KNOWLEDGE_BASE_NAME --environment {azd-env-name}
+$env:RAG_PROVIDER = "foundry_iq"
+$env:FOUNDRY_IQ_STARTUP_CHECK = "true"
+python -m agents.hosted.agent "Who may issue a formal conditional employment offer?"
+```
+
 Start DevUI from the hosted-agent package:
 
 ```powershell
@@ -601,21 +648,20 @@ Keep `HISTORY_PROVIDER=memory` for local development. Cosmos mode requires the
 DevUI host to have private network connectivity to the provisioned VNet.
 
 Tracing is enabled by default. In a response's trace, expand
-`rag.retrieve in_memory` or `rag.retrieve azure_ai_search` to see the retrieval
-provider, result count, whether context was injected, and the local source names
-or Azure AI Search index. RAG runs as a context provider before the model call,
-so it appears as a trace span rather than a tool call. Use `--no-tracing` only
-when trace collection is not wanted.
+`rag.retrieve in_memory`, `rag.retrieve azure_ai_search`, or
+`rag.retrieve foundry_iq` to see the retrieval provider, result count, whether
+context was injected, and source identifiers. RAG runs as a context provider
+before the model call, so it appears as a trace span rather than a tool call.
+Use `--no-tracing` only when trace collection is not wanted.
 
 The private hosted deployment exports application spans to the
 project-connected Application Insights resource. Hosted traces include
-`rag.retrieve azure_ai_search` and `cosmos.history.save`; Cosmos load spans are
-also emitted when `COSMOS_LOAD_MESSAGES=true`. Message content capture is
-enabled through `ENABLE_SENSITIVE_DATA=true` and
-`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`. This records prompts,
-responses, tool arguments, and tool results in Application Insights; restrict
-trace access and retention accordingly. New spans can take several minutes to
-appear in the Foundry trace viewer.
+`rag.retrieve foundry_iq` and `cosmos.history.save`; Cosmos load spans are also
+emitted when `COSMOS_LOAD_MESSAGES=true`. Message content capture is disabled
+through `ENABLE_SENSITIVE_DATA=false` and
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false`. Prompts, responses,
+tool arguments, tool results, and retrieved document content are not exported.
+New spans can take several minutes to appear in the Foundry trace viewer.
 
 Foundry calculates the **Estimated cost** value; the agent does not emit a
 dollar-cost metric. The calculation requires model-call spans with

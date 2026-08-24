@@ -16,6 +16,7 @@ from agents.hosted.logging_config import (
     configure_logging,
     get_log_level,
 )
+from agents.hosted.rag import FoundryIqContextProvider
 
 
 def run_server(
@@ -31,7 +32,10 @@ def run_server(
     cleanup_hooks = [components.credential.close]
     if isinstance(components.history_provider, CosmosHistoryProvider):
         cleanup_hooks.append(components.history_provider.close)
-    if isinstance(components.rag_provider, AzureAISearchContextProvider):
+    if isinstance(
+        components.rag_provider,
+        (AzureAISearchContextProvider, FoundryIqContextProvider),
+    ):
         cleanup_hooks.append(components.rag_provider.close)
     register_cleanup(components.agent, *cleanup_hooks)
 

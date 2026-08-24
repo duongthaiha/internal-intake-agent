@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 
 from agents.hosted.agent import build_agent
 from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
+from agents.hosted.rag import FoundryIqContextProvider
 
 
 DEFAULT_CASES_PATH = Path("evals/local_cases.jsonl")
@@ -173,7 +174,10 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         await stack.enter_async_context(components.credential)
         if isinstance(components.history_provider, CosmosHistoryProvider):
             await stack.enter_async_context(components.history_provider)
-        if isinstance(components.rag_provider, AzureAISearchContextProvider):
+        if isinstance(
+            components.rag_provider,
+            (AzureAISearchContextProvider, FoundryIqContextProvider),
+        ):
             await stack.enter_async_context(components.rag_provider)
         agent = await stack.enter_async_context(components.agent)
 
@@ -248,7 +252,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--rag-provider",
-        choices=("memory", "azure_search", "none"),
+        choices=("memory", "azure_search", "foundry_iq", "none"),
         default="memory",
         help="RAG provider used by the evaluated agent.",
     )

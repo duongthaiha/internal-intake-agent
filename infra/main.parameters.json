@@ -87,10 +87,10 @@
       "value": "${FOUNDRY_IQ_STORAGE_CONTAINER_NAME=knowledge}"
     },
     "foundryIqKnowledgeSourceName": {
-      "value": "${FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME=maf-poc-knowledge-source}"
+      "value": "${FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME=ks-sop}"
     },
     "foundryIqKnowledgeBaseName": {
-      "value": "${FOUNDRY_IQ_KNOWLEDGE_BASE_NAME=maf-poc-knowledge-base}"
+      "value": "${FOUNDRY_IQ_KNOWLEDGE_BASE_NAME=sop-kb}"
     },
     "foundryIqIngestionInterval": {
       "value": "${FOUNDRY_IQ_INGESTION_INTERVAL=PT1H}"
