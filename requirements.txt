@@ -5,6 +5,7 @@ agent-framework-azure-ai-search==1.0.0b260730
 agent-framework-devui==1.0.0b260730
 azure-ai-projects==2.3.0
 azure-search-documents
+azure-storage-blob
 azure-cosmos>=4.6,<5
 azure-identity
 fastapi

@@ -57,6 +57,28 @@ param modelSkuName string = 'GlobalStandard'
 @description('The tokens per minute (TPM) of your model deployment')
 param modelCapacity int = 250
 
+@description('Deployment name for the Foundry IQ answer-synthesis model.')
+param foundryIqChatDeploymentName string = 'foundry-iq-chat'
+@description('Model used by Foundry IQ for query planning and answer synthesis.')
+param foundryIqChatModelName string = 'gpt-5.4-mini'
+@description('Foundry IQ chat model version verified for UK South.')
+param foundryIqChatModelVersion string = '2026-03-17'
+@description('SKU for the Foundry IQ chat model deployment.')
+param foundryIqChatModelSkuName string = 'GlobalStandard'
+@description('Tokens per minute in thousands for the Foundry IQ chat model.')
+param foundryIqChatModelCapacity int = 10
+
+@description('Deployment name for the Foundry IQ embedding model.')
+param foundryIqEmbeddingDeploymentName string = 'foundry-iq-embedding'
+@description('Embedding model used by Foundry IQ ingestion.')
+param foundryIqEmbeddingModelName string = 'text-embedding-3-large'
+@description('Foundry IQ embedding model version verified for UK South.')
+param foundryIqEmbeddingModelVersion string = '1'
+@description('SKU for the Foundry IQ embedding model deployment.')
+param foundryIqEmbeddingModelSkuName string = 'GlobalStandard'
+@description('Tokens per minute in thousands for the Foundry IQ embedding model.')
+param foundryIqEmbeddingModelCapacity int = 10
+
 // Create a short, unique suffix, that will be unique to each resource group
 // Deterministic suffix for idempotent re-deploys (same RG = same names)
 var uniqueSuffix = substring(uniqueString(resourceGroup().id), 0, 4)
@@ -169,6 +191,7 @@ var storagePrefix = length(aiServicesSanitized) > storagePrefixMax
   ? substring(aiServicesSanitized, 0, storagePrefixMax)
   : aiServicesSanitized
 var azureStorageName = '${storagePrefix}${uniqueSuffix}st'
+var foundryIqStorageName = '${storagePrefix}${uniqueSuffix}iq'
 
 // Cosmos DB allows hyphens but enforces 44-char max. Cap defensively.
 var cosmosDBNameRaw = toLower('${aiServices}${uniqueSuffix}cosmosdb')
@@ -219,6 +242,16 @@ var cosmosPrivateDnsZoneId = resourceId(
   'Microsoft.Network/privateDnsZones',
   cosmosPrivateDnsZoneName
 )
+var blobPrivateDnsZoneName = 'privatelink.blob.${environment().suffixes.storage}'
+var blobPrivateDnsZoneResourceGroupName = empty(existingDnsZones[blobPrivateDnsZoneName])
+  ? resourceGroup().name
+  : existingDnsZones[blobPrivateDnsZoneName]
+var blobPrivateDnsZoneId = resourceId(
+  resolvedDnsZonesSubscriptionId,
+  blobPrivateDnsZoneResourceGroupName,
+  'Microsoft.Network/privateDnsZones',
+  blobPrivateDnsZoneName
+)
 var intakeCosmosAccountName = take(toLower('${aiServices}${uniqueSuffix}intake'), 44)
 
 @description('The name of the project capability host to be created')
@@ -237,6 +270,18 @@ var securityControlTags = {
 
 @description('Azure AI Search index the hosted agent RAG pipeline initializes. Not created by this template; the hosted agent creates it at startup.')
 param searchIndexName string = 'maf-poc-knowledge'
+
+@description('Blob container that stores Markdown source documents for Foundry IQ ingestion.')
+param foundryIqContainerName string = 'knowledge'
+
+@description('Foundry IQ blob knowledge source name.')
+param foundryIqKnowledgeSourceName string = 'maf-poc-knowledge-source'
+
+@description('Foundry IQ knowledge base name.')
+param foundryIqKnowledgeBaseName string = 'maf-poc-knowledge-base'
+
+@description('ISO 8601 interval used for incremental Foundry IQ ingestion.')
+param foundryIqIngestionInterval string = 'PT1H'
 
 @description('Cosmos DB SQL database created for the hosted agent chat-history workload (separate from the capability host-managed enterprise_memory database).')
 param cosmosWorkloadDatabaseName string = 'agent-framework'
@@ -346,6 +391,25 @@ module aiAccount 'modules-network-secured/ai-account-identity.bicep' = {
     skipModelDeployment: skipModelDeployment
     allowedClientIpCidr: allowedClientIpCidr
     resourceTags: securityControlTags
+  }
+}
+
+module foundryIqModels 'modules-local/foundry-iq-model-deployments.bicep' = {
+  name: 'foundry-iq-models-${uniqueSuffix}-deployment'
+  scope: resourceGroup(existingAccountSubscriptionId, existingAccountResourceGroupName)
+  params: {
+    accountName: aiAccount.outputs.accountName
+    deployModels: !skipModelDeployment
+    chatDeploymentName: foundryIqChatDeploymentName
+    chatModelName: foundryIqChatModelName
+    chatModelVersion: foundryIqChatModelVersion
+    chatModelSkuName: foundryIqChatModelSkuName
+    chatModelCapacity: foundryIqChatModelCapacity
+    embeddingDeploymentName: foundryIqEmbeddingDeploymentName
+    embeddingModelName: foundryIqEmbeddingModelName
+    embeddingModelVersion: foundryIqEmbeddingModelVersion
+    embeddingModelSkuName: foundryIqEmbeddingModelSkuName
+    embeddingModelCapacity: foundryIqEmbeddingModelCapacity
   }
 }
 
@@ -656,6 +720,44 @@ module applicationInsightsRoleAssignment 'modules-network-secured/application-in
 // Repo-local additions (see infra/UPSTREAM.md)
 // ---------------------------------------------------------------------------
 
+module foundryIqInfrastructure 'modules-local/foundry-iq-infrastructure.bicep' = {
+  name: 'foundry-iq-infrastructure-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    storageAccountName: foundryIqStorageName
+    containerName: foundryIqContainerName
+    privateEndpointSubnetId: vnet.outputs.peSubnetId
+    blobPrivateDnsZoneId: blobPrivateDnsZoneId
+    searchPrincipalId: aiDependencies.outputs.aiSearchPrincipalId
+    uploaderPrincipalId: principalId
+    storageSkuName: contains(['southindia', 'westus'], location) ? 'Standard_GRS' : 'Standard_ZRS'
+  }
+  dependsOn: [
+    privateEndpointAndDNS
+  ]
+}
+
+module foundryIqSearchPrivateLinks 'modules-local/foundry-iq-search-private-links.bicep' = {
+  name: 'foundry-iq-search-links-${uniqueSuffix}-deployment'
+  scope: resourceGroup(aiSearchServiceSubscriptionId, aiSearchServiceResourceGroupName)
+  params: {
+    searchServiceName: aiDependencies.outputs.aiSearchName
+    storageAccountId: foundryIqInfrastructure.outputs.storageAccountId
+    foundryAccountId: aiAccount.outputs.accountID
+    suffix: uniqueSuffix
+    provisionerPrincipalId: deployer().objectId
+  }
+}
+
+module foundryIqFoundryRole 'modules-local/foundry-iq-foundry-role.bicep' = {
+  name: 'foundry-iq-foundry-role-${uniqueSuffix}-deployment'
+  scope: resourceGroup(existingAccountSubscriptionId, existingAccountResourceGroupName)
+  params: {
+    accountName: aiAccount.outputs.accountName
+    searchPrincipalId: aiDependencies.outputs.aiSearchPrincipalId
+  }
+}
+
 // Workload-specific Cosmos DB database/container for hosted-agent chat history.
 // Separate from the capability host's own `enterprise_memory` database. No data
 // migration: this is a fresh container in a fresh deployment.
@@ -766,6 +868,7 @@ module adminAccess 'modules-local/admin-access.bicep' = if (deployAdminAccess) {
 // ---------------------------------------------------------------------------
 
 output AZURE_AI_ACCOUNT_NAME string = aiAccount.outputs.accountName
+output AZURE_AI_ACCOUNT_RESOURCE_ID string = aiAccount.outputs.accountID
 output AZURE_AI_ACCOUNT_IS_EXISTING bool = useExistingAccount
 output AZURE_AI_PROJECT_ID string = aiProject.outputs.projectId
 output AZURE_AI_PROJECT_NAME string = aiProject.outputs.projectName
@@ -779,12 +882,25 @@ output AZURE_COSMOS_DATABASE_NAME string = workloadCosmosDatabase.outputs.databa
 output AZURE_COSMOS_CONTAINER_NAME string = workloadCosmosDatabase.outputs.containerName
 
 output AZURE_SEARCH_SERVICE_NAME string = aiDependencies.outputs.aiSearchName
+output AZURE_SEARCH_SERVICE_RESOURCE_ID string = aiDependencies.outputs.aiSearchID
 output AZURE_SEARCH_SERVICE_IS_EXISTING bool = searchPassedIn
 output AZURE_SEARCH_ENDPOINT string = 'https://${aiDependencies.outputs.aiSearchName}.search.windows.net'
 output AZURE_SEARCH_INDEX_NAME string = searchIndexName
 
 output AZURE_STORAGE_ACCOUNT_NAME string = aiDependencies.outputs.azureStorageName
 output AZURE_STORAGE_ACCOUNT_IS_EXISTING bool = storagePassedIn
+
+output FOUNDRY_IQ_STORAGE_ACCOUNT_ID string = foundryIqInfrastructure.outputs.storageAccountId
+output FOUNDRY_IQ_STORAGE_BLOB_ENDPOINT string = foundryIqInfrastructure.outputs.blobEndpoint
+output FOUNDRY_IQ_STORAGE_CONTAINER_NAME string = foundryIqInfrastructure.outputs.containerName
+output FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME string = foundryIqKnowledgeSourceName
+output FOUNDRY_IQ_KNOWLEDGE_BASE_NAME string = foundryIqKnowledgeBaseName
+output FOUNDRY_IQ_INGESTION_INTERVAL string = foundryIqIngestionInterval
+output FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME string = foundryIqModels.outputs.chatDeploymentName
+output FOUNDRY_IQ_CHAT_MODEL_NAME string = foundryIqChatModelName
+output FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME string = foundryIqModels.outputs.embeddingDeploymentName
+output FOUNDRY_IQ_EMBEDDING_MODEL_NAME string = foundryIqEmbeddingModelName
+output FOUNDRY_IQ_OPENAI_ENDPOINT string = 'https://${aiAccount.outputs.accountName}.openai.azure.com/'
 
 output AZURE_CONTAINER_REGISTRY_NAME string = enableContainerRegistry ? acr!.outputs.acrName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableContainerRegistry ? acr!.outputs.acrLoginServer : ''

@@ -159,6 +159,7 @@ output aiSearchName string = aiSearchExists ? existingSearchService.name : aiSea
 output aiSearchID string = aiSearchExists ? existingSearchService.id : aiSearch.id
 output aiSearchServiceResourceGroupName string = aiSearchExists ? acsParts[4] : resourceGroup().name
 output aiSearchServiceSubscriptionId string = aiSearchExists ? acsParts[2] : subscription().subscriptionId
+output aiSearchPrincipalId string = aiSearchExists ? existingSearchService.identity.principalId : aiSearch.identity.principalId
 
 output azureStorageName string = azureStorageExists ? existingAzureStorageAccount.name :  storage.name
 output azureStorageId string =  azureStorageExists ? existingAzureStorageAccount.id :  storage.id

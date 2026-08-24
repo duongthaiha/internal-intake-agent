@@ -1,20 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-
-from agents.hosted.knowledge import (
-    load_blob_documents,
-    upload_local_documents,
-)
-
-
-class FakeDownload:
-    def __init__(self, payload: bytes) -> None:
-        self.payload = payload
-
-    def readall(self) -> bytes:
-        return self.payload
+from scripts.upload_knowledge import upload_markdown_documents
 
 
 class FakeBlobClient:
@@ -24,47 +11,51 @@ class FakeBlobClient:
 
     def upload_blob(self, payload: bytes, **kwargs) -> None:
         self.container.blobs[self.name] = payload
+        self.container.upload_options[self.name] = kwargs
 
 
 class FakeContainer:
     def __init__(self) -> None:
         self.blobs: dict[str, bytes] = {}
+        self.upload_options: dict[str, dict[str, object]] = {}
 
     def get_blob_client(self, name: str) -> FakeBlobClient:
         return FakeBlobClient(self, name)
 
-    def list_blobs(self) -> list[SimpleNamespace]:
-        return [SimpleNamespace(name=name) for name in self.blobs]
-
-    def download_blob(self, name: str) -> FakeDownload:
-        return FakeDownload(self.blobs[name])
-
-
 class KnowledgeTests(unittest.TestCase):
-    def test_upload_and_load_supported_documents(self) -> None:
+    def test_uploads_markdown_and_preserves_relative_paths(self) -> None:
         container = FakeContainer()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "guide.md").write_text("# Guide\n\nUseful text.", encoding="utf-8")
+            nested = root / "policies"
+            nested.mkdir()
+            (nested / "access.md").write_text("# Access", encoding="utf-8")
             (root / "ignore.json").write_text("{}", encoding="utf-8")
 
-            uploaded = upload_local_documents(container, root)
+            uploaded = upload_markdown_documents(container, root)
 
-        documents = load_blob_documents(container)
-        self.assertEqual(uploaded, 1)
-        self.assertEqual(list(container.blobs), ["guide.md"])
-        self.assertEqual(documents[0]["sourceName"], "guide.md")
-        self.assertEqual(documents[0]["sourceLink"], "guide.md")
-        self.assertIn("Useful text.", documents[0]["content"])
+        self.assertEqual(uploaded, 2)
+        self.assertEqual(
+            list(container.blobs),
+            ["guide.md", "policies/access.md"],
+        )
+        self.assertIn(b"Useful text.", container.blobs["guide.md"])
+        content_settings = container.upload_options["guide.md"]["content_settings"]
+        self.assertEqual(
+            content_settings.content_type,
+            "text/markdown; charset=utf-8",
+        )
+        self.assertIsNone(content_settings.content_encoding)
 
-    def test_load_blob_documents_rejects_empty_supported_content(self) -> None:
+    def test_rejects_empty_markdown_source(self) -> None:
         container = FakeContainer()
-        container.blobs["ignore.json"] = b"{}"
-
-        with self.assertRaisesRegex(RuntimeError, "No .md or .txt"):
-            load_blob_documents(container)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "ignore.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "No .md documents"):
+                upload_markdown_documents(container, root)
 
 
 if __name__ == "__main__":
     unittest.main()
-
