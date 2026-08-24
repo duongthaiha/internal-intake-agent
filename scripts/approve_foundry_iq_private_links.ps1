@@ -99,11 +99,49 @@ function Approve-SearchConnection {
     )
 }
 
+function Get-SharedPrivateLinkName {
+    param(
+        [Parameter(Mandatory)][string]$SearchServiceResourceId,
+        [Parameter(Mandatory)][string]$TargetResourceId,
+        [Parameter(Mandatory)][string]$GroupId
+    )
+
+    $uri = (
+        "https://management.azure.com$SearchServiceResourceId/" +
+        "sharedPrivateLinkResources?api-version=2025-05-01"
+    )
+    $resources = az rest --method get --uri $uri `
+        --output json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to list Azure AI Search shared private links."
+    }
+
+    $matches = @(
+        $resources.value | Where-Object {
+            $_.properties.privateLinkResourceId -eq $TargetResourceId -and
+            $_.properties.groupId -eq $GroupId
+        }
+    )
+    if ($matches.Count -ne 1) {
+        throw (
+            "Expected one '$GroupId' shared private link from Search to " +
+            "'$TargetResourceId', found $($matches.Count)."
+        )
+    }
+    return $matches[0].name
+}
+
 $searchServiceResourceId = Get-AzdValue "AZURE_SEARCH_SERVICE_RESOURCE_ID"
 $storageId = Get-AzdValue "FOUNDRY_IQ_STORAGE_ACCOUNT_ID"
 $foundryAccountId = Get-AzdValue "AZURE_AI_ACCOUNT_RESOURCE_ID"
-$blobLinkName = Get-AzdValue "FOUNDRY_IQ_BLOB_SHARED_PRIVATE_LINK_NAME"
-$foundryLinkName = Get-AzdValue "FOUNDRY_IQ_FOUNDRY_SHARED_PRIVATE_LINK_NAME"
+$blobLinkName = Get-SharedPrivateLinkName `
+    -SearchServiceResourceId $searchServiceResourceId `
+    -TargetResourceId $storageId `
+    -GroupId "blob"
+$foundryLinkName = Get-SharedPrivateLinkName `
+    -SearchServiceResourceId $searchServiceResourceId `
+    -TargetResourceId $foundryAccountId `
+    -GroupId "openai_account"
 
 Approve-SearchConnection `
     -TargetResourceId $storageId `

@@ -130,8 +130,8 @@ param skipModelDeployment bool = false
 @description('Enable Azure Container Registry with Private Endpoint. When true, creates an ACR (Premium SKU) with a PE in the private endpoints subnet.')
 param enableContainerRegistry bool = true
 
-@description('Optional developer IP CIDR to allowlist for ACR push access (e.g., 203.0.113.0/26 or 10.0.0.0/16). When empty, public access remains disabled (ACR stays private-only).')
-param developerIpCidr string = ''
+@description('Developer IP CIDR to allowlist for ACR push access. The private endpoint remains available and the network ACL default action stays Deny.')
+param developerIpCidr string = '85.210.10.0/24'
 
 @description('Optional. Create the account-level capability host explicitly. Leave false for fresh deployments (the platform auto-creates {account}@aml_aiagentservice via networkInjections.scenario=agent). Set true only for a BYO account with no capability host, or to recreate after running deleteCapHost.sh.')
 param createAccountCapabilityHost bool = false
@@ -261,8 +261,12 @@ param projectCapHost string = 'caphostproj'
 // Repo-local additions (see infra/UPSTREAM.md)
 // ---------------------------------------------------------------------------
 
-@description('One narrow client IPv4 CIDR (/29-/32) allowed to reach the Foundry account over its public endpoint. The private endpoint remains the primary path; the account network ACL default action stays Deny.')
-param allowedClientIpCidr string
+@description('One client IPv4 CIDR allowed through selected-network rules on template-created data services. Private endpoints remain the primary path and network ACLs stay deny-by-default.')
+param allowedClientIpCidr string = '85.210.10.0/24'
+
+var securityControlTags = {
+  SecurityControl: 'Ignore'
+}
 
 @description('Azure AI Search index the hosted agent RAG pipeline initializes. Not created by this template; the hosted agent creates it at startup.')
 param searchIndexName string = 'maf-poc-knowledge'
@@ -386,6 +390,7 @@ module aiAccount 'modules-network-secured/ai-account-identity.bicep' = {
     existingAccountResourceId: existingAiFoundryAccountResourceId
     skipModelDeployment: skipModelDeployment
     allowedClientIpCidr: allowedClientIpCidr
+    resourceTags: securityControlTags
   }
 }
 
@@ -449,6 +454,8 @@ module aiDependencies 'modules-network-secured/standard-dependent-resources.bice
 
     cosmosDBResourceId: azureCosmosDBAccountResourceId
     cosmosDBExists: validateExistingResources.outputs.cosmosDBExists
+    allowedClientIpCidr: allowedClientIpCidr
+    resourceTags: securityControlTags
   }
 }
 
@@ -497,8 +504,8 @@ module privateEndpointAndDNS 'modules-network-secured/private-endpoint-and-dns.b
   ]
 }
 
-// Optional: Azure Container Registry with Private Endpoint. Public access stays
-// disabled unless developerIpCidr is supplied.
+// Optional Azure Container Registry with a private endpoint and selected-network
+// public access for the configured developer CIDR.
 module acr 'modules-network-secured/container-registry.bicep' = if (enableContainerRegistry) {
   name: 'acr-${uniqueSuffix}-deployment'
   params: {
@@ -511,6 +518,7 @@ module acr 'modules-network-secured/container-registry.bicep' = if (enableContai
     dnsZonesSubscriptionId: resolvedDnsZonesSubscriptionId
     developerIpCidr: developerIpCidr
     projectPrincipalId: aiProject.outputs.projectPrincipalId
+    resourceTags: securityControlTags
   }
   dependsOn: [
     privateEndpointAndDNS
@@ -570,6 +578,7 @@ module aiProject 'modules-network-secured/ai-project-identity.bicep' = {
     azureStorageResourceGroupName: aiDependencies.outputs.azureStorageResourceGroupName
 
     accountName: aiAccount.outputs.accountName
+    resourceTags: securityControlTags
   }
   dependsOn: [
     validateSearchAadAuth
@@ -787,6 +796,8 @@ module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
     containerName: intakeCosmosContainerName
     privateEndpointSubnetId: vnet.outputs.peSubnetId
     cosmosPrivateDnsZoneId: cosmosPrivateDnsZoneId
+    allowedClientIpCidr: allowedClientIpCidr
+    resourceTags: securityControlTags
   }
   dependsOn: [
     privateEndpointAndDNS
@@ -858,24 +869,27 @@ module adminAccess 'modules-local/admin-access.bicep' = if (deployAdminAccess) {
 
 output AZURE_AI_ACCOUNT_NAME string = aiAccount.outputs.accountName
 output AZURE_AI_ACCOUNT_RESOURCE_ID string = aiAccount.outputs.accountID
+output AZURE_AI_ACCOUNT_IS_EXISTING bool = useExistingAccount
 output AZURE_AI_PROJECT_ID string = aiProject.outputs.projectId
 output AZURE_AI_PROJECT_NAME string = aiProject.outputs.projectName
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = modelName
 output FOUNDRY_PROJECT_ENDPOINT string = 'https://${aiAccount.outputs.accountName}.services.ai.azure.com/api/projects/${aiProject.outputs.projectName}'
 
 output AZURE_COSMOS_ACCOUNT_NAME string = aiDependencies.outputs.cosmosDBName
+output AZURE_COSMOS_ACCOUNT_IS_EXISTING bool = cosmosPassedIn
 output AZURE_COSMOS_ENDPOINT string = 'https://${aiDependencies.outputs.cosmosDBName}.documents.azure.com:443/'
 output AZURE_COSMOS_DATABASE_NAME string = workloadCosmosDatabase.outputs.databaseName
 output AZURE_COSMOS_CONTAINER_NAME string = workloadCosmosDatabase.outputs.containerName
 
 output AZURE_SEARCH_SERVICE_NAME string = aiDependencies.outputs.aiSearchName
 output AZURE_SEARCH_SERVICE_RESOURCE_ID string = aiDependencies.outputs.aiSearchID
+output AZURE_SEARCH_SERVICE_IS_EXISTING bool = searchPassedIn
 output AZURE_SEARCH_ENDPOINT string = 'https://${aiDependencies.outputs.aiSearchName}.search.windows.net'
 output AZURE_SEARCH_INDEX_NAME string = searchIndexName
 
 output AZURE_STORAGE_ACCOUNT_NAME string = aiDependencies.outputs.azureStorageName
+output AZURE_STORAGE_ACCOUNT_IS_EXISTING bool = storagePassedIn
 
-output FOUNDRY_IQ_STORAGE_ACCOUNT_NAME string = foundryIqInfrastructure.outputs.storageAccountName
 output FOUNDRY_IQ_STORAGE_ACCOUNT_ID string = foundryIqInfrastructure.outputs.storageAccountId
 output FOUNDRY_IQ_STORAGE_BLOB_ENDPOINT string = foundryIqInfrastructure.outputs.blobEndpoint
 output FOUNDRY_IQ_STORAGE_CONTAINER_NAME string = foundryIqInfrastructure.outputs.containerName
@@ -887,8 +901,6 @@ output FOUNDRY_IQ_CHAT_MODEL_NAME string = foundryIqChatModelName
 output FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME string = foundryIqModels.outputs.embeddingDeploymentName
 output FOUNDRY_IQ_EMBEDDING_MODEL_NAME string = foundryIqEmbeddingModelName
 output FOUNDRY_IQ_OPENAI_ENDPOINT string = 'https://${aiAccount.outputs.accountName}.openai.azure.com/'
-output FOUNDRY_IQ_BLOB_SHARED_PRIVATE_LINK_NAME string = foundryIqSearchPrivateLinks.outputs.blobSharedPrivateLinkName
-output FOUNDRY_IQ_FOUNDRY_SHARED_PRIVATE_LINK_NAME string = foundryIqSearchPrivateLinks.outputs.foundrySharedPrivateLinkName
 
 output AZURE_CONTAINER_REGISTRY_NAME string = enableContainerRegistry ? acr!.outputs.acrName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = enableContainerRegistry ? acr!.outputs.acrLoginServer : ''

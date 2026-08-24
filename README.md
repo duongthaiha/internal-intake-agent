@@ -81,8 +81,28 @@ Create and update bodies use the intake JSON Schema directly. Responses add the
 request ID, status, schema version, and audit timestamps. Create, read, update,
 and submit responses include an `ETag`; mutating an existing record requires
 that value in `If-Match`. Missing and stale preconditions return `428` and
-`412`, respectively. Submitted requests are immutable, and repeated submission
-is idempotent. Errors use `application/problem+json`.
+`412`, respectively. A read can send `If-None-Match` and receives `304` when its
+cached ETag is still current. Submitted requests are immutable, and retrying a
+submission after an unknown outcome returns the submitted representation.
+
+Create accepts an optional `Idempotency-Key` header. The key is scoped to the
+tenant and authenticated caller and remains reserved for the lifetime of the
+intake record. Retrying the same validated payload with the same key returns the
+original resource, `Location`, and `ETag`; using the key for a different payload
+returns `409`. Keys must contain 1-255 visible ASCII characters, must not contain
+sensitive information, and must not be reused. Clients that omit the header keep
+the existing behavior where each POST creates a new draft.
+
+This API uses `Idempotency-Key` for generic HTTP and APIM MCP client ergonomics.
+The Microsoft Azure REST API Guidelines prescribe the paired
+`Repeatability-Request-ID` and `Repeatability-First-Sent` protocol for formal
+Azure data-plane APIs; supporting both protocols in v1 would create ambiguous
+retry semantics, so that alternative is deferred to a future API version.
+
+Errors use RFC 9457-style `application/problem+json` bodies and include a stable
+`x-ms-error-code` response header. Authentication failures include
+`WWW-Authenticate`, persistence throttling includes `Retry-After`, and the
+OpenAPI contract documents these headers.
 
 Every route requires a Microsoft Entra ID access token. Configure one app
 registration for the API with:
@@ -166,7 +186,7 @@ network-secured template, adapted for this workload. It creates
 
 - A new Foundry account and project injected into a dedicated BYO VNet
 - A delegated `/24` agent subnet and private-endpoint subnet
-- Private Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
+- Private endpoints for Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
 - A dedicated private Storage account and blob container for Foundry IQ sources
 - A Container Apps intake API and separate private Cosmos DB account
 - Private endpoints and linked Private DNS zones
@@ -174,11 +194,13 @@ network-secured template, adapted for this workload. It creates
 - Foundry IQ chat and embedding model deployments
 - Optional Azure Bastion and private Windows Server administration VM
 
-The agent subnet permits public outbound traffic. Foundry inbound access uses
-two paths: a private endpoint inside the VNet and a public endpoint restricted
-to one narrow deployer CIDR rule. The current corporate egress pool uses
-`85.210.10.184/29`, which includes the supplied `85.210.10.186` address.
-Cosmos DB, Search, Storage, and ACR remain private.
+The agent subnet permits public outbound traffic. Foundry, both Cosmos DB
+accounts, Azure AI Search, Storage, and ACR retain their private endpoints and
+also enable public access through selected-network rules restricted to
+`85.210.10.0/24`. ACL defaults remain deny, local/key authentication remains
+disabled where already configured, and each template-created service carries
+the `SecurityControl=Ignore` tag. Externally supplied existing resources are
+referenced but not retagged or reconfigured.
 
 The current `maf-poc-byo` environment sets `AZURE_DEPLOY_ADMIN_ACCESS=false`
 because this subscription has no deployable VM SKU in UK South. This does not
@@ -189,14 +211,14 @@ Run preflight without provisioning or deleting resources:
 ```powershell
 .\scripts\deploy_byo.ps1 `
   -PreflightOnly `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>"
 ```
 
-The script can query an approved Microsoft or enterprise IP-echo endpoint passed
-with `-IpDetectionEndpoint` or `PUBLIC_IP_ECHO_ENDPOINT`. If detection is not
-configured, unavailable, or ambiguous, it stops and requires
-`-AllowedClientIp`; it never creates an allow-all rule.
+The script defaults `-AllowedClientIp` to `85.210.10.0/24`. An explicitly
+approved public IPv4 address or `/24`-through-`/32` CIDR can override the
+default. If the parameter is explicitly empty, the script can query an approved
+Microsoft or enterprise IP-echo endpoint passed with `-IpDetectionEndpoint` or
+`PUBLIC_IP_ECHO_ENDPOINT`; it never creates an allow-all rule.
 
 UK South currently requires capacity to be released from the former deployment.
 The destructive switch is guarded so it can delete only
@@ -204,7 +226,6 @@ The destructive switch is guarded so it can delete only
 
 ```powershell
 .\scripts\deploy_byo.ps1 `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
   -DeleteOldResourceGroup
 ```
@@ -223,10 +244,10 @@ hosted-agent cutover to the Foundry IQ knowledge base are intentionally deferred
 the existing hosted-agent retrieval path remains unchanged in this phase.
 
 The intake image is built locally because the ACR data plane is network
-restricted. During deployment the workflow applies the same narrow client CIDR
-to ACR, pushes the image, and leaves the registry private-endpoint enabled. Run
-the workflow from that allowlisted address or from a host with private VNet
-connectivity; it never enables unrestricted registry access.
+restricted. During deployment the workflow applies the same client CIDR to ACR, pushes the
+image, and leaves the registry private endpoint enabled. Run the workflow from
+that allowlisted range or from a host with private VNet connectivity; it never
+enables unrestricted registry access.
 
 The separate serverless Cosmos account, Container Apps environment, and running
 replicas add Azure cost independently of the hosted agent. The default API scale
@@ -239,7 +260,6 @@ the local azd environment without being printed. Supply a secure value instead:
 ```powershell
 $password = Read-Host "Admin VM recovery password" -AsSecureString
 .\scripts\deploy_byo.ps1 `
-  -AllowedClientIp "<your-public-ipv4>" `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
   -AdminVmPassword $password `
   -DeleteOldResourceGroup
@@ -303,7 +323,6 @@ These non-sensitive azd outputs configure the workflow:
 | `AZURE_AI_ACCOUNT_RESOURCE_ID` | Exact Foundry account targeted by private-link approval | Deployment output | Approval |
 | `AZURE_SEARCH_SERVICE_RESOURCE_ID` | Exact Search service containing shared private links | Deployment output | Approval |
 | `AZURE_SEARCH_ENDPOINT` | Existing private Search data-plane endpoint | Deployment output | Setup and validation |
-| `FOUNDRY_IQ_STORAGE_ACCOUNT_NAME` | Dedicated source Storage account name | Deterministic deployment output | Operations |
 | `FOUNDRY_IQ_STORAGE_ACCOUNT_ID` | Dedicated source Storage resource ID | Deployment output | Provisioning |
 | `FOUNDRY_IQ_STORAGE_BLOB_ENDPOINT` | Private Blob endpoint used for upload | Deployment output | Upload |
 | `FOUNDRY_IQ_STORAGE_CONTAINER_NAME` | Source blob container | `knowledge` | Upload and provisioning |
@@ -315,8 +334,6 @@ These non-sensitive azd outputs configure the workflow:
 | `FOUNDRY_IQ_EMBEDDING_MODEL_NAME` | Embedding model identity | `text-embedding-3-large` | Provisioning |
 | `FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME` | Answer-synthesis deployment | `foundry-iq-chat` | Provisioning |
 | `FOUNDRY_IQ_CHAT_MODEL_NAME` | Chat model identity | `gpt-5.4-mini` | Provisioning |
-| `FOUNDRY_IQ_BLOB_SHARED_PRIVATE_LINK_NAME` | Search outbound link to Blob | Deterministic deployment output | Approval and validation |
-| `FOUNDRY_IQ_FOUNDRY_SHARED_PRIVATE_LINK_NAME` | Search outbound link to Foundry models | Deterministic deployment output | Approval and validation |
 
 All values in this table are identifiers or endpoints rather than secrets.
 `setup_foundry_iq.ps1` reads them from the selected azd environment. To run the
@@ -780,7 +797,7 @@ Foundry dataset tags. If local content changes, choose a new
 `--dataset-version`; the script refuses to reuse a version whose content cannot
 be verified.
 
-Authenticate to the deployment tenant from the single allowlisted client `/32`
+Authenticate to the deployment tenant from the allowlisted `85.210.10.0/24`
 or an approved private-network host, select the deployed azd environment, and
 load its values:
 
@@ -1071,8 +1088,9 @@ azd deploy --environment maf-poc-byo
 
 Hosted agent deployment is complete only after the final version starts with
 dependency checks enabled and `validate_byo_deployment.ps1` confirms grounded
-Search output, Cosmos write/read/delete access, private endpoint approvals, DNS
-links, network injection, and the exact Foundry client IP rule.
+Search output, Cosmos write/read/delete access, `SecurityControl=Ignore` tags,
+private endpoint approvals, DNS links, network injection, and the exact
+selected-network CIDR rules.
 
 To retire a failed BYO deployment safely, delete the project capability host
 before the account capability host or account, purge the deleted Foundry

@@ -51,13 +51,36 @@ function Assert-RoleAssignment {
     }
 }
 
+function Get-SharedPrivateLink {
+    param(
+        [Parameter(Mandatory)][string]$SearchServiceResourceId,
+        [Parameter(Mandatory)][string]$TargetResourceId,
+        [Parameter(Mandatory)][string]$GroupId
+    )
+
+    $resources = Get-ArmResource (
+        "$SearchServiceResourceId/sharedPrivateLinkResources"
+    ) "2025-05-01"
+    $matches = @(
+        $resources.value | Where-Object {
+            $_.properties.privateLinkResourceId -eq $TargetResourceId -and
+            $_.properties.groupId -eq $GroupId
+        }
+    )
+    if ($matches.Count -ne 1) {
+        throw (
+            "Expected one '$GroupId' shared private link from Search to " +
+            "'$TargetResourceId', found $($matches.Count)."
+        )
+    }
+    return $matches[0]
+}
+
 $storageId = Get-AzdValue "FOUNDRY_IQ_STORAGE_ACCOUNT_ID"
-$storageName = Get-AzdValue "FOUNDRY_IQ_STORAGE_ACCOUNT_NAME"
+$storageName = ($storageId -split "/")[-1]
 $containerName = Get-AzdValue "FOUNDRY_IQ_STORAGE_CONTAINER_NAME"
 $searchId = Get-AzdValue "AZURE_SEARCH_SERVICE_RESOURCE_ID"
 $foundryAccountId = Get-AzdValue "AZURE_AI_ACCOUNT_RESOURCE_ID"
-$blobLinkName = Get-AzdValue "FOUNDRY_IQ_BLOB_SHARED_PRIVATE_LINK_NAME"
-$foundryLinkName = Get-AzdValue "FOUNDRY_IQ_FOUNDRY_SHARED_PRIVATE_LINK_NAME"
 $chatDeploymentName = Get-AzdValue "FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME"
 $embeddingDeploymentName = Get-AzdValue "FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME"
 
@@ -89,12 +112,13 @@ if ($container.properties.publicAccess -ne "None") {
 $null = Get-ArmResource $privateEndpointId "2024-05-01"
 $null = Get-ArmResource $privateDnsGroupId "2024-05-01"
 
-foreach ($linkName in @($blobLinkName, $foundryLinkName)) {
-    $link = Get-ArmResource (
-        "$searchId/sharedPrivateLinkResources/$linkName"
-    ) "2025-05-01"
+$links = @(
+    Get-SharedPrivateLink $searchId $storageId "blob"
+    Get-SharedPrivateLink $searchId $foundryAccountId "openai_account"
+)
+foreach ($link in $links) {
     if ($link.properties.status -ne "Approved") {
-        throw "Shared private link '$linkName' is not approved."
+        throw "Shared private link '$($link.name)' is not approved."
     }
 }
 

@@ -25,8 +25,9 @@ Foundry samples repository:
    - A preserved top-level `principalId` parameter (used only for the new
      admin VM role assignment described below; the upstream template has no
      equivalent parameter).
-   - New parameters and modules for the Cosmos DB workload database, the
-     Foundry dual inbound path, and private admin access (see below).
+   - New parameters and modules for the Cosmos DB workload database, selected
+     public CIDR access, security-control tagging, and private admin access (see
+     below).
    - An `output` section (upstream `main.bicep` has none) exposing the
      azd/script-compatible contract: `AZURE_AI_ACCOUNT_NAME`,
      `AZURE_AI_PROJECT_ID`, `AZURE_AI_PROJECT_NAME`,
@@ -43,17 +44,30 @@ Foundry samples repository:
    for the required Foundry **dual inbound path**: the account keeps
    `publicNetworkAccess: 'Enabled'` (upstream sets `'Disabled'`) with
    `networkAcls.defaultAction: 'Deny'` and exactly one narrow allowlisted IPv4 CIDR
-   supplied by the new `allowedClientIpCidr` parameter. The private endpoint
+   supplied by `allowedClientIpCidr` (default `85.210.10.0/24`). The private endpoint
    from `private-endpoint-and-dns.bicep` is unchanged and remains the primary
    path; the agent subnet's default/public outbound behavior is unchanged (no
-   NAT Gateway or Firewall was added).
+   NAT Gateway or Firewall was added). The template-created account also carries
+   `SecurityControl=Ignore`.
 
-3. **`infra/modules-network-secured/application-insights.bicep`** gained one
+3. **`infra/modules-network-secured/standard-dependent-resources.bicep`** now
+   gives template-created Cosmos DB, Azure AI Search, and Storage resources the
+   `SecurityControl=Ignore` tag and selected-network access for
+   `85.210.10.0/24`. Each private endpoint remains in place; ACLs stay
+   deny-by-default and existing local/key-authentication restrictions are
+   unchanged. Externally supplied resources remain unmodified.
+
+4. **`infra/modules-network-secured/ai-project-identity.bicep`** and
+   **`container-registry.bicep`** apply the same tag to the template-created
+   Foundry project and ACR. ACR retains its private endpoint and uses the same
+   selected-network CIDR with `defaultAction: 'Deny'`.
+
+5. **`infra/modules-network-secured/application-insights.bicep`** gained one
    additional output, `appInsightsConnectionString`, so `main.bicep` can
    populate `APPLICATIONINSIGHTS_CONNECTION_STRING` without a second
    `existing` resource lookup. No behavior change.
 
-4. **`infra/modules-local/workload-cosmos-database.bicep`** (new, not part of
+6. **`infra/modules-local/workload-cosmos-database.bicep`** (new, not part of
    upstream) creates the workload-specific Cosmos DB SQL database/container —
    `agent-framework` / `chat-history`, partition key `/session_id` — on the
    Cosmos DB account that `standard-dependent-resources.bicep` provisions.
@@ -61,7 +75,12 @@ Foundry samples repository:
    capability host auto-provisions for agent thread/file storage; there is no
    data migration, this is a fresh container.
 
-5. **`infra/modules-local/admin-access.bicep`** (new, not part of upstream)
+7. **`infra/modules-local/intake-cosmos.bicep`** creates the dedicated intake
+   Cosmos DB account with the same tag and selected-network CIDR. Its private
+   endpoint, private DNS integration, TLS minimum, local-authentication posture,
+   SQL database, and SQL container remain unchanged.
+
+8. **`infra/modules-local/admin-access.bicep`** (new, not part of upstream)
    adds private admin access: an `admin-subnet` and the fixed-name
    `AzureBastionSubnet` added to the upstream-created VNet via the same
    `Microsoft.Network/virtualNetworks/subnets` sub-resource technique
@@ -75,19 +94,19 @@ Foundry samples repository:
    assignment for the deploying `principalId`. The admin VM password is never
    emitted as a template output.
 
-## Not changed from upstream
+## Preserved behavior
 
-- Cosmos DB, Storage, and Azure AI Search keep `publicNetworkAccess:
-  'Disabled'` / local-auth-disabled where upstream already disables it
-  (Cosmos DB `disableLocalAuth: true`, Storage `allowSharedKeyAccess: false`).
+- Cosmos DB, Storage, and Azure AI Search keep the upstream private endpoints
+  while adding one selected-network public CIDR. Cosmos DB keeps
+  `disableLocalAuth: true`, Storage keeps `allowSharedKeyAccess: false`, and
   Azure AI Search keeps upstream's `disableLocalAuth: false` +
   `authOptions.aadOrApiKey` combination because the Standard Agent capability
   host's CognitiveSearch connection requires that exact configuration
   (documented in upstream's `validate-search-aad-auth.bicep`); disabling local
   auth further is not compatible with the capability host as shipped upstream.
-- Azure Container Registry defaults to `publicNetworkAccess: 'Disabled'`.
-  Supplying `developerIpCidr` enables public access only for that narrow
-  allowlisted IPv4 CIDR, rather than enabling unrestricted public access; the
-  parameter remains empty by default in `main.parameters.json`.
+- Azure Container Registry defaults to selected-network public access for
+  `85.210.10.0/24` and retains its private endpoint. The
+  `AZURE_ACR_DEVELOPER_IP_CIDR` environment contract remains available for an
+  explicitly approved override; unrestricted public access is never enabled.
 - No NAT Gateway or Azure Firewall was added to the agent subnet; its
   default/public outbound behavior is unchanged from upstream.
