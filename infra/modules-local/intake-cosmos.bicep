@@ -16,9 +16,16 @@ param privateEndpointSubnetId string
 @description('Resource ID of the private DNS zone already linked to the workload VNet.')
 param cosmosPrivateDnsZoneId string
 
+@description('Client IPv4 CIDR allowed through the account selected-network rule.')
+param allowedClientIpCidr string
+
+@description('Tags applied to the Cosmos DB account.')
+param resourceTags object
+
 resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   name: accountName
   location: location
+  tags: resourceTags
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
@@ -38,7 +45,12 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
       }
     ]
     disableLocalAuth: true
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    ipRules: [
+      {
+        ipAddressOrRange: allowedClientIpCidr
+      }
+    ]
     minimalTlsVersion: 'Tls12'
   }
 }

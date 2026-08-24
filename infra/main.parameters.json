@@ -45,10 +45,10 @@
       "value": "${AZURE_ENABLE_CONTAINER_REGISTRY=true}"
     },
     "developerIpCidr": {
-      "value": "${AZURE_ACR_DEVELOPER_IP_CIDR=}"
+      "value": "${AZURE_ACR_DEVELOPER_IP_CIDR=85.210.10.0/24}"
     },
     "allowedClientIpCidr": {
-      "value": "${AZURE_ALLOWED_CLIENT_IP_CIDR}"
+      "value": "${AZURE_ALLOWED_CLIENT_IP_CIDR=85.210.10.0/24}"
     },
     "searchIndexName": {
       "value": "${AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge}"

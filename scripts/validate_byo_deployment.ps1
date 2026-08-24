@@ -7,12 +7,12 @@
     checks that actually apply to the current infra/main.bicep BYO-VNet setup:
       - Foundry account public network access is Enabled (dual inbound path)
         with networkAcls.defaultAction Deny and exactly the expected
-        allowlisted narrow client IPv4 CIDR.
+        allowlisted client IPv4 CIDR.
       - Foundry networkInjections has the "agent" scenario pointed at the
         expected agent subnet with useMicrosoftManagedNetwork=false.
       - The agent subnet has the Microsoft.App/environments delegation.
-      - Cosmos DB / Azure AI Search / Storage / Container Registry public
-        access posture matches infra/UPSTREAM.md.
+      - Foundry, Cosmos DB, Azure AI Search, Storage, and Container Registry
+        carry the expected security tag and selected-network ACL.
       - Every private endpoint connection is Approved (count + status).
       - Every expected private DNS zone has a Succeeded VNet link.
       - The hosted agent is reachable and its response is grounded (includes
@@ -52,11 +52,44 @@ function Get-AzdValueOrDefault {
     return $value.Trim()
 }
 
+function Assert-SecurityControlTag {
+    param(
+        [Parameter(Mandatory)]$Resource,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    if ($Resource.tags.SecurityControl -ne "Ignore") {
+        throw "$DisplayName must have tag 'SecurityControl=Ignore'."
+    }
+}
+
+function Assert-SingleIpRule {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$Rules,
+        [Parameter(Mandatory)][string]$ExpectedValue,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    if ($Rules.Count -ne 1 -or [string]$Rules[0] -ne $ExpectedValue) {
+        throw (
+            "$DisplayName must contain exactly one IP rule equal to '$ExpectedValue'; " +
+            "found: $($Rules -join ', ')."
+        )
+    }
+}
+
 $resourceGroup = Get-AzdValue "AZURE_RESOURCE_GROUP"
 $foundryAccount = Get-AzdValue "AZURE_AI_ACCOUNT_NAME"
+$foundryAccountIsExisting = (Get-AzdValueOrDefault "AZURE_AI_ACCOUNT_IS_EXISTING" "false") -eq "true"
+$foundryProjectId = Get-AzdValue "AZURE_AI_PROJECT_ID"
 $cosmosAccount = Get-AzdValue "AZURE_COSMOS_ACCOUNT_NAME"
+$cosmosAccountIsExisting = (Get-AzdValueOrDefault "AZURE_COSMOS_ACCOUNT_IS_EXISTING" "false") -eq "true"
 $searchService = Get-AzdValue "AZURE_SEARCH_SERVICE_NAME"
+$searchServiceIsExisting = (Get-AzdValueOrDefault "AZURE_SEARCH_SERVICE_IS_EXISTING" "false") -eq "true"
 $storageAccount = Get-AzdValue "AZURE_STORAGE_ACCOUNT_NAME"
+$storageAccountIsExisting = (Get-AzdValueOrDefault "AZURE_STORAGE_ACCOUNT_IS_EXISTING" "false") -eq "true"
 $modelDeployment = Get-AzdValue "AZURE_AI_MODEL_DEPLOYMENT_NAME"
 $vnetName = Get-AzdValue "AZURE_VIRTUAL_NETWORK_NAME"
 $agentSubnetId = Get-AzdValue "AZURE_AGENT_SUBNET_ID"
@@ -81,19 +114,23 @@ $foundry = az cognitiveservices account show `
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect Foundry account '$foundryAccount'."
 }
-if ($foundry.properties.publicNetworkAccess -ne "Enabled") {
-    throw "Foundry account '$foundryAccount' publicNetworkAccess must be 'Enabled' (dual inbound path), found '$($foundry.properties.publicNetworkAccess)'."
+if (-not $foundryAccountIsExisting) {
+    Assert-SecurityControlTag -Resource $foundry -DisplayName "Foundry account '$foundryAccount'"
+    if ($foundry.properties.publicNetworkAccess -ne "Enabled") {
+        throw "Foundry account '$foundryAccount' publicNetworkAccess must be 'Enabled' (dual inbound path), found '$($foundry.properties.publicNetworkAccess)'."
+    }
+    if ($foundry.properties.networkAcls.defaultAction -ne "Deny") {
+        throw "Foundry account '$foundryAccount' networkAcls.defaultAction must be 'Deny', found '$($foundry.properties.networkAcls.defaultAction)'."
+    }
+    $ipRules = @($foundry.properties.networkAcls.ipRules | ForEach-Object { $_.value })
+    Assert-SingleIpRule -Rules $ipRules -ExpectedValue $allowedClientIp -DisplayName "Foundry account '$foundryAccount'"
 }
-if ($foundry.properties.networkAcls.defaultAction -ne "Deny") {
-    throw "Foundry account '$foundryAccount' networkAcls.defaultAction must be 'Deny', found '$($foundry.properties.networkAcls.defaultAction)'."
+
+$foundryProject = az resource show --ids $foundryProjectId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect Foundry project '$foundryProjectId'."
 }
-$ipRules = @($foundry.properties.networkAcls.ipRules | ForEach-Object { $_.value })
-if ($ipRules.Count -ne 1 -or $ipRules[0] -ne $allowedClientIp) {
-    throw (
-        "Foundry account '$foundryAccount' networkAcls.ipRules must contain exactly one entry " +
-        "equal to '$allowedClientIp' (the API representation of '$allowedClientIpCidr'), found: $($ipRules -join ', ')."
-    )
-}
+Assert-SecurityControlTag -Resource $foundryProject -DisplayName "Foundry project '$foundryProjectId'"
 
 $networkInjections = @($foundry.properties.networkInjections)
 $agentInjection = $networkInjections | Where-Object { $_.scenario -eq "agent" } | Select-Object -First 1
@@ -129,17 +166,28 @@ $cosmos = az cosmosdb show --name $cosmosAccount --resource-group $resourceGroup
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect Cosmos DB account '$cosmosAccount'."
 }
-if ($cosmos.publicNetworkAccess -ne "Disabled" -or -not $cosmos.disableLocalAuth) {
-    throw "Cosmos DB '$cosmosAccount' must have public network access disabled and local authentication disabled."
+if (-not $cosmos.disableLocalAuth) {
+    throw "Cosmos DB '$cosmosAccount' must have local authentication disabled."
+}
+if (-not $cosmosAccountIsExisting) {
+    Assert-SecurityControlTag -Resource $cosmos -DisplayName "Cosmos DB '$cosmosAccount'"
+    if ($cosmos.publicNetworkAccess -ne "Enabled") {
+        throw "Cosmos DB '$cosmosAccount' must use selected-network public access."
+    }
+    $cosmosIpRules = @($cosmos.ipRules | ForEach-Object { $_.ipAddressOrRange })
+    Assert-SingleIpRule -Rules $cosmosIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Cosmos DB '$cosmosAccount'"
 }
 
 $intakeCosmos = az cosmosdb show --name $intakeCosmosAccount --resource-group $resourceGroup --output json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect intake Cosmos DB account '$intakeCosmosAccount'."
 }
-if ($intakeCosmos.publicNetworkAccess -ne "Disabled" -or -not $intakeCosmos.disableLocalAuth) {
-    throw "Intake Cosmos DB '$intakeCosmosAccount' must have public network access disabled and local authentication disabled."
+Assert-SecurityControlTag -Resource $intakeCosmos -DisplayName "Intake Cosmos DB '$intakeCosmosAccount'"
+if ($intakeCosmos.publicNetworkAccess -ne "Enabled" -or -not $intakeCosmos.disableLocalAuth) {
+    throw "Intake Cosmos DB '$intakeCosmosAccount' must use selected-network public access with local authentication disabled."
 }
+$intakeCosmosIpRules = @($intakeCosmos.ipRules | ForEach-Object { $_.ipAddressOrRange })
+Assert-SingleIpRule -Rules $intakeCosmosIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Intake Cosmos DB '$intakeCosmosAccount'"
 $intakeContainer = az cosmosdb sql container show `
     --account-name $intakeCosmosAccount `
     --database-name $intakeCosmosDatabase `
@@ -203,8 +251,13 @@ $search = az search service show --name $searchService --resource-group $resourc
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect Azure AI Search service '$searchService'."
 }
-if ($search.publicNetworkAccess.ToLowerInvariant() -ne "disabled") {
-    throw "Azure AI Search '$searchService' must have public network access disabled, found '$($search.publicNetworkAccess)'."
+if (-not $searchServiceIsExisting) {
+    Assert-SecurityControlTag -Resource $search -DisplayName "Azure AI Search '$searchService'"
+    if ($search.publicNetworkAccess.ToLowerInvariant() -ne "enabled" -or $search.networkRuleSet.bypass -ne "None") {
+        throw "Azure AI Search '$searchService' must use selected-network public access with no ACL bypass."
+    }
+    $searchIpRules = @($search.networkRuleSet.ipRules | ForEach-Object { $_.value })
+    Assert-SingleIpRule -Rules $searchIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Azure AI Search '$searchService'"
 }
 $searchAadOptionPresent = $null -ne $search.authOptions -and $null -ne $search.authOptions.aadOrApiKey
 if ($search.disableLocalAuth -and -not $searchAadOptionPresent) {
@@ -221,8 +274,16 @@ $storage = az storage account show --name $storageAccount --resource-group $reso
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect Storage account '$storageAccount'."
 }
-if ($storage.publicNetworkAccess -ne "Disabled" -or $storage.allowSharedKeyAccess) {
-    throw "Storage account '$storageAccount' must have public network access disabled and shared key access disabled."
+if ($storage.allowSharedKeyAccess) {
+    throw "Storage account '$storageAccount' must have shared key access disabled."
+}
+if (-not $storageAccountIsExisting) {
+    Assert-SecurityControlTag -Resource $storage -DisplayName "Storage account '$storageAccount'"
+    if ($storage.publicNetworkAccess -ne "Enabled" -or $storage.networkRuleSet.defaultAction -ne "Deny") {
+        throw "Storage account '$storageAccount' must use selected-network public access."
+    }
+    $storageIpRules = @($storage.networkRuleSet.ipRules | ForEach-Object { $_.ipAddressOrRange })
+    Assert-SingleIpRule -Rules $storageIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Storage account '$storageAccount'"
 }
 
 # ---------------------------------------------------------------------------
@@ -233,15 +294,12 @@ if ($acrName) {
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect Container Registry '$acrName'."
     }
-    if ([string]::IsNullOrWhiteSpace($acrDeveloperIpCidr)) {
-        if ($acr.publicNetworkAccess -ne "Disabled") {
-            throw "Container Registry '$acrName' must have public network access disabled (no developer IP CIDR configured), found '$($acr.publicNetworkAccess)'."
-        }
-    } else {
-        if ($acr.publicNetworkAccess -ne "Enabled" -or $acr.networkRuleSet.defaultAction -ne "Deny") {
-            throw "Container Registry '$acrName' with a developer IP CIDR must be Enabled with networkRuleSet.defaultAction Deny."
-        }
+    Assert-SecurityControlTag -Resource $acr -DisplayName "Container Registry '$acrName'"
+    if ($acr.publicNetworkAccess -ne "Enabled" -or $acr.networkRuleSet.defaultAction -ne "Deny") {
+        throw "Container Registry '$acrName' must use selected-network public access with networkRuleSet.defaultAction Deny."
     }
+    $acrIpRules = @($acr.networkRuleSet.ipRules | ForEach-Object { $_.value })
+    Assert-SingleIpRule -Rules $acrIpRules -ExpectedValue $acrDeveloperIpCidr -DisplayName "Container Registry '$acrName'"
 }
 
 # ---------------------------------------------------------------------------
@@ -342,7 +400,7 @@ if (
 }
 
 Write-Output "BYO deployment validation passed."
-Write-Output "Foundry account: Enabled + Deny default + one narrow CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
-Write-Output "Cosmos DB / Azure AI Search / Storage$(if ($acrName) { ' / Container Registry' }) public access posture verified; all private endpoints Approved; all private DNS zone VNet links Succeeded."
+Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
+Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
 Write-Output "Intake API: deployed image is live; dedicated subnet delegation, managed identity, and private Cosmos account/container partitioning verified."
