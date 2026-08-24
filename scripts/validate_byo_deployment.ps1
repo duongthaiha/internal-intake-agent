@@ -236,13 +236,16 @@ $intakeApp = az containerapp show --name $intakeApiName --resource-group $resour
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect intake Container App '$intakeApiName'."
 }
+$intakeIdentityEntries = @($intakeApp.identity.userAssignedIdentities.PSObject.Properties)
 if (
     -not $intakeApp.properties.configuration.ingress.external -or
     $intakeApp.properties.configuration.ingress.targetPort -ne 8000 -or
-    -not $intakeApp.identity.principalId
+    $intakeApp.identity.type -ne "UserAssigned" -or
+    $intakeIdentityEntries.Count -ne 1
 ) {
-    throw "Intake Container App must use external HTTPS ingress on port 8000 and a managed identity."
+    throw "Intake Container App must use external HTTPS ingress on port 8000 and one user-assigned managed identity."
 }
+$intakePrincipalId = $intakeIdentityEntries[0].Value.principalId
 $intakeImage = $intakeApp.properties.template.containers[0].image
 if ($intakeImage -match "containerapps-helloworld") {
     throw "Intake Container App is still running the provisioning placeholder image."
@@ -260,14 +263,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 $intakeDataRole = $intakeRoleAssignments |
     Where-Object {
-        $_.principalId -eq $intakeApp.identity.principalId -and
+        $_.principalId -eq $intakePrincipalId -and
         $_.scope -eq $expectedIntakeContainerScope -and
         $_.roleDefinitionId -match "/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002$"
     } |
     Select-Object -First 1
 if (-not $intakeDataRole) {
     throw (
-        "Intake Container App identity '$($intakeApp.identity.principalId)' must have " +
+        "Intake Container App identity '$intakePrincipalId' must have " +
         "Cosmos DB Built-in Data Contributor scoped to '$expectedIntakeContainerScope'."
     )
 }
@@ -336,7 +339,11 @@ if ($acrName) {
     if ($acr.publicNetworkAccess -ne "Enabled" -or $acr.networkRuleSet.defaultAction -ne "Deny") {
         throw "Container Registry '$acrName' must use selected-network public access with networkRuleSet.defaultAction Deny."
     }
-    $acrIpRules = @($acr.networkRuleSet.ipRules | ForEach-Object { $_.value })
+    $acrIpRules = @(
+        $acr.networkRuleSet.ipRules | ForEach-Object {
+            if ($_.ipAddressOrRange) { $_.ipAddressOrRange } else { $_.value }
+        }
+    )
     Assert-SingleIpRule -Rules $acrIpRules -ExpectedValue $acrDeveloperIpCidr -DisplayName "Container Registry '$acrName'"
 }
 

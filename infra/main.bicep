@@ -283,6 +283,9 @@ param foundryIqKnowledgeBaseName string = 'maf-poc-knowledge-base'
 @description('ISO 8601 interval used for incremental Foundry IQ ingestion.')
 param foundryIqIngestionInterval string = 'PT1H'
 
+@description('Whether to create or update Foundry IQ Search shared private links.')
+param manageFoundryIqSearchPrivateLinks bool = true
+
 @description('Cosmos DB SQL database created for the hosted agent chat-history workload (separate from the capability host-managed enterprise_memory database).')
 param cosmosWorkloadDatabaseName string = 'agent-framework'
 
@@ -336,6 +339,12 @@ param intakeApiMaxReplicas int = 5
 @description('Log level supplied to the intake API.')
 param intakeApiLogLevel string = 'INFO'
 
+@description('Create Foundry account-level scheduled evaluation role assignments. Set false when equivalent assignments already exist under different deterministic names.')
+param createScheduledEvaluationAccountRoles bool = true
+
+@description('Create or update the Foundry account private endpoint. Set false to preserve an existing endpoint during reprovisioning that also updates model deployments.')
+param manageFoundryPrivateEndpoint bool = true
+
 @description('Name of the admin subnet used for private admin access (Bastion + admin VM).')
 param adminSubnetName string = 'admin-subnet'
 
@@ -368,6 +377,10 @@ module vnet 'modules-network-secured/network-agent-vnet.bicep' = {
     vnetAddressPrefix: vnetAddressPrefix
     agentSubnetPrefix: agentSubnetPrefix
     peSubnetPrefix: peSubnetPrefix
+    containerAppsSubnetName: intakeContainerAppsSubnetName
+    containerAppsSubnetPrefix: !existingVnetPassedIn || empty(intakeContainerAppsSubnetResourceId)
+      ? intakeContainerAppsSubnetPrefix
+      : ''
     existingVnetSubscriptionId: vnetSubscriptionId
     reuseExistingSubnets: reuseExistingSubnets
   }
@@ -479,6 +492,7 @@ module privateEndpointAndDNS 'modules-network-secured/private-endpoint-and-dns.b
   name: '${uniqueSuffix}-private-endpoint'
   params: {
     aiAccountName: aiAccount.outputs.accountName
+    manageAiAccountPrivateEndpoint: manageFoundryPrivateEndpoint
     location: location
     aiSearchName: aiDependencies.outputs.aiSearchName
     storageName: aiDependencies.outputs.azureStorageName
@@ -534,6 +548,9 @@ module applicationInsights 'modules-network-secured/application-insights.bicep' 
     aiAccountName: aiAccount.outputs.accountName
     disablePublicIngestion: true
   }
+  dependsOn: [
+    foundryIqModels
+  ]
 }
 
 // Private trace ingestion path (Azure Monitor Private Link Scope).
@@ -604,6 +621,7 @@ module scheduledEvaluationRoleAssignment 'modules-local/foundry-scheduled-evalua
     projectName: aiProject.outputs.projectName
     projectPrincipalId: aiProject.outputs.projectPrincipalId
     evaluationOperatorPrincipalId: principalId
+    createAccountRoleAssignments: createScheduledEvaluationAccountRoles
   }
 }
 
@@ -737,7 +755,7 @@ module foundryIqInfrastructure 'modules-local/foundry-iq-infrastructure.bicep' =
   ]
 }
 
-module foundryIqSearchPrivateLinks 'modules-local/foundry-iq-search-private-links.bicep' = {
+module foundryIqSearchPrivateLinks 'modules-local/foundry-iq-search-private-links.bicep' = if (manageFoundryIqSearchPrivateLinks) {
   name: 'foundry-iq-search-links-${uniqueSuffix}-deployment'
   scope: resourceGroup(aiSearchServiceSubscriptionId, aiSearchServiceResourceGroupName)
   params: {
@@ -777,7 +795,7 @@ module workloadCosmosDatabase 'modules-local/workload-cosmos-database.bicep' = {
 
 // Dedicated network and data plane for the intake API. These resources are kept
 // separate from both the Foundry agent subnet and its chat-history Cosmos account.
-module intakeNetwork 'modules-local/intake-network.bicep' = if (empty(intakeContainerAppsSubnetResourceId)) {
+module intakeNetwork 'modules-local/intake-network.bicep' = if (empty(intakeContainerAppsSubnetResourceId) && existingVnetPassedIn) {
   name: 'intake-network-${uniqueSuffix}-deployment'
   scope: resourceGroup(vnetSubscriptionId, vnetResourceGroupName)
   params: {
@@ -786,6 +804,12 @@ module intakeNetwork 'modules-local/intake-network.bicep' = if (empty(intakeCont
     subnetPrefix: intakeContainerAppsSubnetPrefix
   }
 }
+
+var resolvedIntakeContainerAppsSubnetId = !empty(intakeContainerAppsSubnetResourceId)
+  ? intakeContainerAppsSubnetResourceId
+  : (existingVnetPassedIn
+      ? intakeNetwork!.outputs.subnetId
+      : '${vnet.outputs.virtualNetworkId}/subnets/${intakeContainerAppsSubnetName}')
 
 module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
   name: 'intake-cosmos-${uniqueSuffix}-deployment'
@@ -804,17 +828,29 @@ module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
   ]
 }
 
+module intakeIdentity 'modules-local/intake-identity.bicep' = {
+  name: 'intake-identity-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    identityName: 'id-intake-${uniqueSuffix}'
+    useContainerRegistry: enableContainerRegistry
+    containerRegistryName: enableContainerRegistry ? acr!.outputs.acrName : ''
+    cosmosAccountName: intakeCosmos.outputs.accountName
+    cosmosDatabaseName: intakeCosmos.outputs.databaseName
+    cosmosContainerName: intakeCosmos.outputs.containerName
+  }
+}
+
 module intakeContainerApp 'modules-local/intake-container-app.bicep' = {
   name: 'intake-container-app-${uniqueSuffix}-deployment'
   params: {
     location: location
     imageName: intakeApiImageName
-    infrastructureSubnetId: !empty(intakeContainerAppsSubnetResourceId)
-      ? intakeContainerAppsSubnetResourceId
-      : intakeNetwork!.outputs.subnetId
+    infrastructureSubnetId: resolvedIntakeContainerAppsSubnetId
     useContainerRegistry: enableContainerRegistry
-    containerRegistryName: enableContainerRegistry ? acr!.outputs.acrName : ''
     containerRegistryLoginServer: enableContainerRegistry ? acr!.outputs.acrLoginServer : ''
+    identityResourceId: intakeIdentity.outputs.identityId
+    identityClientId: intakeIdentity.outputs.clientId
     cosmosEndpoint: intakeCosmos.outputs.endpoint
     cosmosDatabaseName: intakeCosmos.outputs.databaseName
     cosmosContainerName: intakeCosmos.outputs.containerName
@@ -831,16 +867,6 @@ module intakeContainerApp 'modules-local/intake-container-app.bicep' = {
   dependsOn: [
     monitorPrivateLink
   ]
-}
-
-module intakeCosmosRole 'modules-local/intake-cosmos-role.bicep' = {
-  name: 'intake-cosmos-role-${uniqueSuffix}-deployment'
-  params: {
-    accountName: intakeCosmos.outputs.accountName
-    databaseName: intakeCosmos.outputs.databaseName
-    containerName: intakeCosmos.outputs.containerName
-    principalId: intakeContainerApp.outputs.principalId
-  }
 }
 
 // Private admin access: admin subnet + AzureBastionSubnet added to the VNet
@@ -922,10 +948,8 @@ output SERVICE_INTAKE_API_ENDPOINTS array = [
   intakeContainerApp.outputs.uri
 ]
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = intakeContainerApp.outputs.environmentName
-output AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID string = !empty(intakeContainerAppsSubnetResourceId)
-  ? intakeContainerAppsSubnetResourceId
-  : intakeNetwork!.outputs.subnetId
-output INTAKE_COSMOS_ROLE_ASSIGNMENT_ID string = intakeCosmosRole.outputs.roleAssignmentId
+output AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID string = resolvedIntakeContainerAppsSubnetId
+output INTAKE_COSMOS_ROLE_ASSIGNMENT_ID string = intakeIdentity.outputs.cosmosRoleAssignmentId
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.appInsightsConnectionString
 output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsights.outputs.appInsightsId

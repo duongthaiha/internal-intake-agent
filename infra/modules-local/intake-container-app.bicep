@@ -10,11 +10,14 @@ param infrastructureSubnetId string
 @description('Whether the deployment uses the provisioned Azure Container Registry.')
 param useContainerRegistry bool
 
-@description('Name of the provisioned Azure Container Registry.')
-param containerRegistryName string
-
 @description('Login server of the provisioned Azure Container Registry.')
 param containerRegistryLoginServer string
+
+@description('Resource ID of the intake API user-assigned managed identity.')
+param identityResourceId string
+
+@description('Client ID of the intake API user-assigned managed identity.')
+param identityClientId string
 
 @description('Dedicated intake Cosmos DB endpoint.')
 param cosmosEndpoint string
@@ -56,7 +59,6 @@ param maxReplicas int = 5
 
 var serviceName = 'intake-api'
 var environmentName = 'cae-intake-${uniqueString(resourceGroup().id)}'
-var acrPullRoleDefinitionId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var serviceImageName = !empty(imageName)
   ? imageName
   : (useContainerRegistry ? '${containerRegistryLoginServer}/${serviceName}' : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest')
@@ -82,7 +84,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     'azd-service-name': serviceName
   }
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identityResourceId}': {}
+    }
   }
   properties: {
     managedEnvironmentId: environment.id
@@ -97,7 +102,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       registries: useContainerRegistry ? [
         {
           server: containerRegistryLoginServer
-          identity: 'system'
+          identity: identityResourceId
         }
       ] : []
     }
@@ -110,6 +115,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'INTAKE_COSMOS_ENDPOINT'
               value: cosmosEndpoint
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
             }
             {
               name: 'INTAKE_COSMOS_DATABASE_NAME'
@@ -194,21 +203,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (useContainerRegistry) {
-  name: containerRegistryName
-}
-
-resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (useContainerRegistry) {
-  name: guid(registry.id, app.id, acrPullRoleDefinitionId)
-  scope: registry
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleDefinitionId)
-    principalId: app.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-output principalId string = app.identity.principalId
 output environmentName string = environment.name
 output appName string = app.name
 output imageName string = serviceImageName

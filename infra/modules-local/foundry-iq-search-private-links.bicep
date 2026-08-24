@@ -63,6 +63,9 @@ resource foundrySharedPrivateLink 'Microsoft.Search/searchServices/sharedPrivate
     privateLinkResourceId: foundryAccountId
     requestMessage: 'Approve private model access for Foundry IQ ingestion and retrieval.'
   }
+  dependsOn: [
+    blobSharedPrivateLink
+  ]
 }
 
 output blobSharedPrivateLinkName string = blobSharedPrivateLink.name

@@ -338,6 +338,7 @@ These non-sensitive azd outputs configure the workflow:
 | `FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME` | Search knowledge-source name | `maf-poc-knowledge-source` | Provisioning |
 | `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` | Search knowledge-base name | `maf-poc-knowledge-base` | Provisioning and validation |
 | `FOUNDRY_IQ_INGESTION_INTERVAL` | ISO 8601 incremental refresh interval | `PT1H` | Provisioning |
+| `AZURE_MANAGE_FOUNDRY_IQ_SEARCH_PRIVATE_LINKS` | Create or update the Search shared private links used by Foundry IQ; set `false` only to preserve links during recovery from a stuck Azure control-plane operation | `true` | Provisioning |
 | `FOUNDRY_IQ_OPENAI_ENDPOINT` | Foundry model endpoint | Deployment output | Provisioning |
 | `FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME` | Embedding deployment | `foundry-iq-embedding` | Provisioning |
 | `FOUNDRY_IQ_EMBEDDING_MODEL_NAME` | Embedding model identity | `text-embedding-3-large` | Provisioning |

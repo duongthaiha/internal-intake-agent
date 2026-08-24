@@ -27,6 +27,9 @@ Security Benefits:
 param location string = resourceGroup().location
 @description('Name of the AI Foundry account')
 param aiAccountName string
+
+@description('Create or update the Foundry account private endpoint. Set false when an existing endpoint must be preserved during model-only reprovisioning.')
+param manageAiAccountPrivateEndpoint bool = true
 @description('Name of the AI Search service')
 param aiSearchName string
 @description('Name of the storage account')
@@ -113,7 +116,7 @@ resource peSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existin
 // Private endpoint for AI Services account
 // - Creates network interface in customer hub subnet
 // - Establishes private connection to AI Services account
-resource aiAccountPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+resource aiAccountPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (manageAiAccountPrivateEndpoint) {
   name: '${aiAccountName}-private-endpoint'
   location: location
   properties: {
@@ -353,7 +356,7 @@ resource cosmosDBLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@202
 }
 
 // ---- DNS Zone Groups ----
-resource aiServicesDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = {
+resource aiServicesDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (manageAiAccountPrivateEndpoint) {
   parent: aiAccountPrivateEndpoint
   name: '${aiAccountName}-dns-group'
   properties: {

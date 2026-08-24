@@ -64,7 +64,8 @@ function Get-SharedPrivateLink {
     $matches = @(
         $resources.value | Where-Object {
             $_.properties.privateLinkResourceId -eq $TargetResourceId -and
-            $_.properties.groupId -eq $GroupId
+            $_.properties.groupId -eq $GroupId -and
+            $_.properties.provisioningState -ne "Incomplete"
         }
     )
     if ($matches.Count -ne 1) {

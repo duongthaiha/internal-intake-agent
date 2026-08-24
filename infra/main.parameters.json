@@ -95,6 +95,9 @@
     "foundryIqIngestionInterval": {
       "value": "${FOUNDRY_IQ_INGESTION_INTERVAL=PT1H}"
     },
+    "manageFoundryIqSearchPrivateLinks": {
+      "value": "${AZURE_MANAGE_FOUNDRY_IQ_SEARCH_PRIVATE_LINKS=true}"
+    },
     "cosmosWorkloadDatabaseName": {
       "value": "${AZURE_COSMOS_DATABASE_NAME=agent-framework}"
     },
@@ -142,6 +145,12 @@
     },
     "intakeApiLogLevel": {
       "value": "${LOG_LEVEL=INFO}"
+    },
+    "createScheduledEvaluationAccountRoles": {
+      "value": "${AZURE_CREATE_SCHEDULED_EVAL_ACCOUNT_ROLES=true}"
+    },
+    "manageFoundryPrivateEndpoint": {
+      "value": "${AZURE_MANAGE_FOUNDRY_PRIVATE_ENDPOINT=true}"
     },
     "adminSubnetPrefix": {
       "value": "${AZURE_ADMIN_SUBNET_PREFIX=192.168.2.0/24}"

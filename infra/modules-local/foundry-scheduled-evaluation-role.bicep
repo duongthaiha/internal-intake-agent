@@ -2,6 +2,7 @@ param accountName string
 param projectName string
 param projectPrincipalId string
 param evaluationOperatorPrincipalId string
+param createAccountRoleAssignments bool = true
 
 var foundryUserRoleId = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 var cognitiveServicesOpenAIUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -25,7 +26,7 @@ resource scheduledEvaluationRoleAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 
-resource scheduledEvaluationModelInferenceRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource scheduledEvaluationModelInferenceRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAccountRoleAssignments) {
   name: guid(account.id, projectPrincipalId, cognitiveServicesOpenAIUserRoleId)
   scope: account
   properties: {
@@ -35,7 +36,7 @@ resource scheduledEvaluationModelInferenceRoleAssignment 'Microsoft.Authorizatio
   }
 }
 
-resource evaluationOperatorModelInferenceRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource evaluationOperatorModelInferenceRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAccountRoleAssignments) {
   name: guid(account.id, evaluationOperatorPrincipalId, cognitiveServicesOpenAIUserRoleId)
   scope: account
   properties: {
@@ -46,5 +47,5 @@ resource evaluationOperatorModelInferenceRoleAssignment 'Microsoft.Authorization
 }
 
 output roleAssignmentId string = scheduledEvaluationRoleAssignment.id
-output modelInferenceRoleAssignmentId string = scheduledEvaluationModelInferenceRoleAssignment.id
-output operatorModelInferenceRoleAssignmentId string = evaluationOperatorModelInferenceRoleAssignment.id
+output modelInferenceRoleAssignmentId string = createAccountRoleAssignments ? scheduledEvaluationModelInferenceRoleAssignment!.id : ''
+output operatorModelInferenceRoleAssignmentId string = createAccountRoleAssignments ? evaluationOperatorModelInferenceRoleAssignment!.id : ''

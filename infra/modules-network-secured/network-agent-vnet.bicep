@@ -28,6 +28,12 @@ param agentSubnetPrefix string = ''
 @description('Address prefix for the private endpoint subnet')
 param peSubnetPrefix string = ''
 
+@description('Optional name of the Container Apps infrastructure subnet for a new VNet.')
+param containerAppsSubnetName string = ''
+
+@description('Optional address prefix for the Container Apps infrastructure subnet for a new VNet.')
+param containerAppsSubnetPrefix string = ''
+
 // Non-destructive subnet handling. See existing-vnet.bicep.
 @description('When true and useExistingVnet=true, do NOT modify the existing subnets, reference them as-is.')
 param reuseExistingSubnets bool = false
@@ -43,6 +49,8 @@ module newVNet 'vnet.bicep' = if (!useExistingVnet) {
     vnetAddressPrefix: vnetAddressPrefix
     agentSubnetPrefix: agentSubnetPrefix
     peSubnetPrefix: peSubnetPrefix
+    containerAppsSubnetName: containerAppsSubnetName
+    containerAppsSubnetPrefix: containerAppsSubnetPrefix
   }
 }
 

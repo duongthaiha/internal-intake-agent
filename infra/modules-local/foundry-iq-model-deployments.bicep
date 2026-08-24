@@ -50,6 +50,9 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
       version: embeddingModelVersion
     }
   }
+  dependsOn: [
+    chatDeployment
+  ]
 }
 
 output chatDeploymentName string = chatDeploymentName

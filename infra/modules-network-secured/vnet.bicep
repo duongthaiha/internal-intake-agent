@@ -34,6 +34,12 @@ param agentSubnetPrefix string = ''
 
 @description('Address prefix for the private endpoint subnet')
 param peSubnetPrefix string = ''
+
+@description('Optional name of the Container Apps infrastructure subnet.')
+param containerAppsSubnetName string = ''
+
+@description('Optional address prefix for the Container Apps infrastructure subnet.')
+param containerAppsSubnetPrefix string = ''
 var defaultVnetAddressPrefix = '192.168.0.0/16'
 var vnetAddress = empty(vnetAddressPrefix) ? defaultVnetAddressPrefix : vnetAddressPrefix
 var agentSubnet = empty(agentSubnetPrefix) ? cidrSubnet(vnetAddress, 24, 0) : agentSubnetPrefix
@@ -48,7 +54,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         vnetAddress
       ]
     }
-    subnets: [
+    subnets: concat([
       {
         name: agentSubnetName
         properties: {
@@ -69,7 +75,23 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           addressPrefix: peSubnet
         }
       }
-    ]
+    ], empty(containerAppsSubnetPrefix) ? [] : [
+      {
+        name: containerAppsSubnetName
+        properties: {
+          addressPrefix: containerAppsSubnetPrefix
+          delegations: [
+            {
+              name: 'Microsoft.App/environments'
+              properties: {
+                serviceName: 'Microsoft.App/environments'
+              }
+            }
+          ]
+          privateEndpointNetworkPolicies: 'Enabled'
+        }
+      }
+    ])
   }
 }
 // Output variables
