@@ -66,10 +66,11 @@ var deploymentImageName = !empty(imageName)
   ? imageName
   : 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
   name: environmentName
   location: location
   properties: {
+    publicNetworkAccess: 'Disabled'
     vnetConfiguration: {
       infrastructureSubnetId: infrastructureSubnetId
       internal: false
@@ -204,6 +205,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 output environmentName string = environment.name
+output environmentId string = environment.id
+output environmentDefaultDomain string = environment.properties.defaultDomain
 output appName string = app.name
 output imageName string = serviceImageName
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'

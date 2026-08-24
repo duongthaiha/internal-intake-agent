@@ -19,7 +19,10 @@
         the model deployment name and the expected knowledge source), which
         also proves the Cosmos DB and Search startup checks passed.
       - The intake API uses a separate Cosmos DB account, has the expected
-        container-scoped data role, and passes both liveness and readiness.
+        container-scoped data role, private-only environment ingress, and
+        configured liveness/readiness probes.
+      - Public APIM Standard v2 uses outbound VNet integration and exposes the
+        five intake operations as Entra-protected MCP tools.
     No `az cognitiveservices account managed-network *` calls are made.
 #>
 param(
@@ -83,6 +86,7 @@ function Assert-SingleIpRule {
 }
 
 $resourceGroup = Get-AzdValue "AZURE_RESOURCE_GROUP"
+$location = Get-AzdValue "AZURE_LOCATION"
 $foundryAccount = Get-AzdValue "AZURE_AI_ACCOUNT_NAME"
 $foundryAccountIsExisting = (Get-AzdValueOrDefault "AZURE_AI_ACCOUNT_IS_EXISTING" "false") -eq "true"
 $foundryProjectId = Get-AzdValue "AZURE_AI_PROJECT_ID"
@@ -105,6 +109,9 @@ $intakeCosmosContainer = Get-AzdValue "INTAKE_COSMOS_CONTAINER_NAME"
 $intakeApiName = Get-AzdValue "SERVICE_INTAKE_API_NAME"
 $intakeApiUri = Get-AzdValue "SERVICE_INTAKE_API_URI"
 $intakeSubnetId = Get-AzdValue "AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID"
+$intakeApimName = Get-AzdValue "AZURE_INTAKE_APIM_NAME"
+$intakeMcpServerUrl = Get-AzdValue "AZURE_INTAKE_MCP_SERVER_URL"
+$intakeValidationBearerToken = $env:INTAKE_VALIDATION_BEARER_TOKEN
 
 if ($intakeCosmosAccount -eq $cosmosAccount) {
     throw "Intake records and conversation history must use separate Cosmos DB accounts."
@@ -237,6 +244,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect intake Container App '$intakeApiName'."
 }
 $intakeIdentityEntries = @($intakeApp.identity.userAssignedIdentities.PSObject.Properties)
+$intakeEnvironmentId = $intakeApp.properties.managedEnvironmentId
+$intakeEnvironment = az containerapp env show --ids $intakeEnvironmentId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect the intake Container Apps environment '$intakeEnvironmentId'."
+}
 if (
     -not $intakeApp.properties.configuration.ingress.external -or
     $intakeApp.properties.configuration.ingress.targetPort -ne 8000 -or
@@ -244,6 +256,9 @@ if (
     $intakeIdentityEntries.Count -ne 1
 ) {
     throw "Intake Container App must use external HTTPS ingress on port 8000 and one user-assigned managed identity."
+}
+if ($intakeEnvironment.properties.publicNetworkAccess -ne "Disabled") {
+    throw "Intake Container Apps environment publicNetworkAccess must be Disabled."
 }
 $intakePrincipalId = $intakeIdentityEntries[0].Value.principalId
 $intakeImage = $intakeApp.properties.template.containers[0].image
@@ -275,13 +290,105 @@ if (-not $intakeDataRole) {
     )
 }
 
-$liveness = Invoke-RestMethod -Uri "$($intakeApiUri.TrimEnd('/'))/health/live" -Method Get -TimeoutSec 30
-if ($liveness.status -ne "ok") {
-    throw "Intake API liveness check failed."
+$probes = @($intakeApp.properties.template.containers[0].probes)
+$livenessProbe = $probes | Where-Object { $_.type -eq "Liveness" -and $_.httpGet.path -eq "/health/live" } | Select-Object -First 1
+$readinessProbe = $probes | Where-Object { $_.type -eq "Readiness" -and $_.httpGet.path -eq "/health/ready" } | Select-Object -First 1
+if (-not $livenessProbe -or -not $readinessProbe) {
+    throw "Intake Container App must retain the expected liveness and readiness probes."
 }
-$readiness = Invoke-RestMethod -Uri "$($intakeApiUri.TrimEnd('/'))/health/ready" -Method Get -TimeoutSec 30
-if ($readiness.status -ne "ready") {
-    throw "Intake API readiness check failed."
+
+# ---------------------------------------------------------------------------
+# API Management REST and MCP projection
+# ---------------------------------------------------------------------------
+$intakeApim = az apim show --name $intakeApimName --resource-group $resourceGroup --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect API Management service '$intakeApimName'."
+}
+Assert-SecurityControlTag -Resource $intakeApim -DisplayName "API Management '$intakeApimName'"
+if (
+    $intakeApim.sku.name -ne "StandardV2" -or
+    $intakeApim.publicNetworkAccess -ne "Enabled" -or
+    [string]::IsNullOrWhiteSpace($intakeApim.virtualNetworkConfiguration.subnetResourceId)
+) {
+    throw "API Management must use StandardV2, public gateway access, and outbound VNet integration."
+}
+$apimSubnet = az network vnet subnet show --ids $intakeApim.virtualNetworkConfiguration.subnetResourceId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect API Management integration subnet."
+}
+$apimDelegations = @($apimSubnet.delegations | ForEach-Object { $_.serviceName })
+if ($apimDelegations -notcontains "Microsoft.Web/serverFarms" -or -not $apimSubnet.networkSecurityGroup.id) {
+    throw "API Management integration subnet must have an NSG and Microsoft.Web/serverFarms delegation."
+}
+if ($apimSubnet.id -notlike "*/virtualNetworks/$vnetName/subnets/*") {
+    throw "API Management integration subnet must belong to workload VNet '$vnetName' for private ACA DNS resolution."
+}
+
+$apimApiBase = "$($intakeApim.id)/apis"
+$intakeRestApi = az rest --method get --url "$apimApiBase/intake-api?api-version=2025-09-01-preview" --output json | ConvertFrom-Json
+$intakeMcpApi = az rest --method get --url "$apimApiBase/intake-mcp?api-version=2025-09-01-preview" --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect the intake REST API and MCP server in API Management."
+}
+if ($intakeRestApi.properties.serviceUrl -ne $intakeApiUri -or $intakeRestApi.properties.subscriptionRequired) {
+    throw "APIM intake REST API must target the private ACA URL without requiring a subscription key."
+}
+if ($intakeMcpApi.properties.type -ne "mcp" -or $intakeMcpApi.properties.subscriptionRequired) {
+    throw "APIM intake MCP API must be type mcp without requiring a subscription key."
+}
+$mcpTools = @(
+    az rest --method get --url "$apimApiBase/intake-mcp/tools?api-version=2025-09-01-preview" --output json |
+        ConvertFrom-Json |
+        Select-Object -ExpandProperty value
+)
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect intake MCP tools."
+}
+$expectedMcpTools = @(
+    "create_intake_request",
+    "get_intake_request",
+    "list_intake_requests",
+    "replace_intake_request",
+    "submit_intake_request"
+)
+if (@($mcpTools).Count -ne $expectedMcpTools.Count) {
+    throw "Expected exactly five intake MCP tools."
+}
+foreach ($toolName in $expectedMcpTools) {
+    if (-not ($mcpTools | Where-Object { $_.name -eq $toolName })) {
+        throw "Missing intake MCP tool '$toolName'."
+    }
+}
+$mcpPolicy = az rest --method get --url "$apimApiBase/intake-mcp/policies/policy?api-version=2025-09-01-preview" --output json | ConvertFrom-Json
+if (
+    $LASTEXITCODE -ne 0 -or
+    $mcpPolicy.properties.value -notmatch "validate-azure-ad-token" -or
+    $mcpPolicy.properties.value -notmatch "rate-limit-by-key" -or
+    $mcpPolicy.properties.value -notmatch "set-header name=.Authorization."
+) {
+    throw "Intake MCP policy must validate Entra tokens, rate limit callers, and forward Authorization."
+}
+
+if (-not [string]::IsNullOrWhiteSpace($intakeValidationBearerToken)) {
+    $headers = @{
+        Authorization = "Bearer $intakeValidationBearerToken"
+        Accept = "application/json, text/event-stream"
+        "Content-Type" = "application/json"
+    }
+    $initializeBody = @{
+        jsonrpc = "2.0"
+        id = 1
+        method = "initialize"
+        params = @{
+            protocolVersion = "2025-06-18"
+            capabilities = @{}
+            clientInfo = @{
+                name = "deployment-validation"
+                version = "1.0"
+            }
+        }
+    } | ConvertTo-Json -Depth 6
+    Invoke-WebRequest -Uri $intakeMcpServerUrl -Method Post -Headers $headers -Body $initializeBody -TimeoutSec 30 | Out-Null
 }
 
 # ---------------------------------------------------------------------------
@@ -359,6 +466,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Unable to list private endpoints in '$resourceGroup'."
 }
 $expectedPeNames = @($expectedPeTargets | ForEach-Object { "$_-private-endpoint" })
+$expectedPeNames += "intake-container-apps-private-endpoint"
 $expectedPeNames += ($privateEndpoints | Where-Object { $_.name -like "ampls-tracing-*-pe" } | Select-Object -ExpandProperty name)
 foreach ($expectedPeName in $expectedPeNames) {
     if (@($privateEndpoints | Where-Object { $_.name -eq $expectedPeName }).Count -ne 1) {
@@ -386,6 +494,7 @@ $expectedDnsZones = @(
     "privatelink.search.windows.net",
     "privatelink.blob.core.windows.net",
     "privatelink.documents.azure.com",
+    "privatelink.$location.azurecontainerapps.io",
     "privatelink.monitor.azure.com",
     "privatelink.oms.opinsights.azure.com",
     "privatelink.ods.opinsights.azure.com",
@@ -448,4 +557,5 @@ Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
 Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
-Write-Output "Intake API: deployed image is ready; dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
+Write-Output "Intake API: private ACA endpoint, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
+Write-Output "Intake MCP: public APIM Standard v2 gateway, outbound VNet integration, Entra policy, and five REST-backed tools verified at $intakeMcpServerUrl."

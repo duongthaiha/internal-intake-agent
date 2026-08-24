@@ -253,6 +253,7 @@ var blobPrivateDnsZoneId = resourceId(
   blobPrivateDnsZoneName
 )
 var intakeCosmosAccountName = take(toLower('${aiServices}${uniqueSuffix}intake'), 44)
+var intakeApimName = take(toLower('apim-${aiServices}-${uniqueSuffix}'), 50)
 
 @description('The name of the project capability host to be created')
 param projectCapHost string = 'caphostproj'
@@ -306,6 +307,29 @@ param intakeContainerAppsSubnetPrefix string = '192.168.4.0/23'
 
 @description('Optional existing dedicated Container Apps infrastructure subnet resource ID. Supply this when the deployment must not modify an existing VNet.')
 param intakeContainerAppsSubnetResourceId string = ''
+
+@description('Name of the dedicated API Management outbound integration subnet.')
+param intakeApimSubnetName string = 'intake-apim-subnet'
+
+@description('Address prefix for the dedicated API Management subnet. A /24 is recommended and it must not overlap existing subnets.')
+param intakeApimSubnetPrefix string = '192.168.6.0/24'
+
+@description('Optional existing API Management integration subnet resource ID. The subnet must be dedicated, have an NSG, and be delegated to Microsoft.Web/serverFarms.')
+param intakeApimSubnetResourceId string = ''
+
+@description('Publisher display name configured on the API Management service.')
+param intakeApimPublisherName string = 'Internal Intake Platform'
+
+@description('Publisher email configured on the API Management service.')
+param intakeApimPublisherEmail string
+
+@description('Maximum MCP tool calls allowed in each rate-limit window.')
+@minValue(1)
+param intakeMcpRateLimitCalls int = 60
+
+@description('MCP rate-limit window in seconds.')
+@minValue(1)
+param intakeMcpRateLimitRenewalPeriod int = 60
 
 @description('Name of the dedicated intake Cosmos DB SQL database.')
 param intakeCosmosDatabaseName string = 'intake'
@@ -870,6 +894,54 @@ module intakeContainerApp 'modules-local/intake-container-app.bicep' = {
   ]
 }
 
+module intakePrivateEndpoint 'modules-local/intake-private-endpoint.bicep' = {
+  name: 'intake-private-endpoint-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    managedEnvironmentId: intakeContainerApp.outputs.environmentId
+    managedEnvironmentDefaultDomain: intakeContainerApp.outputs.environmentDefaultDomain
+    privateEndpointSubnetId: vnet.outputs.peSubnetId
+    virtualNetworkId: vnet.outputs.virtualNetworkId
+    resourceTags: securityControlTags
+  }
+}
+
+module intakeApimNetwork 'modules-local/apim-network.bicep' = if (empty(intakeApimSubnetResourceId)) {
+  name: 'intake-apim-network-${uniqueSuffix}-deployment'
+  scope: resourceGroup(vnetSubscriptionId, vnetResourceGroupName)
+  params: {
+    location: location
+    vnetName: vnet.outputs.virtualNetworkName
+    subnetName: intakeApimSubnetName
+    subnetPrefix: intakeApimSubnetPrefix
+    resourceTags: securityControlTags
+  }
+}
+
+var resolvedIntakeApimSubnetId = !empty(intakeApimSubnetResourceId)
+  ? intakeApimSubnetResourceId
+  : intakeApimNetwork!.outputs.subnetId
+
+module intakeApimMcp 'modules-local/intake-apim-mcp.bicep' = {
+  name: 'intake-apim-mcp-${uniqueSuffix}-deployment'
+  params: {
+    location: location
+    serviceName: intakeApimName
+    publisherName: intakeApimPublisherName
+    publisherEmail: intakeApimPublisherEmail
+    integrationSubnetId: resolvedIntakeApimSubnetId
+    intakeBackendUrl: intakeContainerApp.outputs.uri
+    entraTenantId: intakeEntraTenantId
+    entraAudience: intakeEntraAudience
+    rateLimitCalls: intakeMcpRateLimitCalls
+    rateLimitRenewalPeriod: intakeMcpRateLimitRenewalPeriod
+    resourceTags: securityControlTags
+  }
+  dependsOn: [
+    intakePrivateEndpoint
+  ]
+}
+
 // Private admin access: admin subnet + AzureBastionSubnet added to the VNet
 // after its initial creation (non-racing, see modules-local/admin-access.bicep),
 // a Standard Azure Bastion host with a Standard static public IP, and a Windows
@@ -951,6 +1023,8 @@ output SERVICE_INTAKE_API_ENDPOINTS array = [
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = intakeContainerApp.outputs.environmentName
 output AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID string = resolvedIntakeContainerAppsSubnetId
 output INTAKE_COSMOS_ROLE_ASSIGNMENT_ID string = intakeIdentity.outputs.cosmosRoleAssignmentId
+output AZURE_INTAKE_APIM_NAME string = intakeApimMcp.outputs.serviceName
+output AZURE_INTAKE_MCP_SERVER_URL string = intakeApimMcp.outputs.mcpServerUrl
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.appInsightsConnectionString
 output APPLICATIONINSIGHTS_RESOURCE_ID string = applicationInsights.outputs.appInsightsId
