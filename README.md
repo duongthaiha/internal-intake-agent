@@ -167,9 +167,11 @@ network-secured template, adapted for this workload. It creates
 - A new Foundry account and project injected into a dedicated BYO VNet
 - A delegated `/24` agent subnet and private-endpoint subnet
 - Private Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
+- A dedicated private Storage account and blob container for Foundry IQ sources
 - A Container Apps intake API and separate private Cosmos DB account
 - Private endpoints and linked Private DNS zones
 - A `gpt-5.6-sol` model deployment
+- Foundry IQ chat and embedding model deployments
 - Optional Azure Bastion and private Windows Server administration VM
 
 The agent subnet permits public outbound traffic. Foundry inbound access uses
@@ -212,7 +214,13 @@ model quota, provisions the BYO-VNet stack, publishes the hosted agent, assigns
 its Cosmos DB and Search roles, republishes with dependency checks enabled, and
 runs a grounded invocation. It also builds and deploys the intake API container.
 The new Cosmos history and intake containers start empty; the hosted agent
-rebuilds the Search index from `data/knowledge`.
+rebuilds its existing Search index from `data/knowledge`.
+
+The separate Foundry IQ pipeline does not use the hosted agent for ingestion.
+It reads Markdown from its dedicated private Storage account and owns the
+generated Search data source, skillset, index, and indexer. Toolbox creation and
+hosted-agent cutover to the Foundry IQ knowledge base are intentionally deferred;
+the existing hosted-agent retrieval path remains unchanged in this phase.
 
 The intake image is built locally because the ACR data plane is network
 restricted. During deployment the workflow applies the same narrow client CIDR
@@ -250,6 +258,88 @@ connectivity:
 ```powershell
 .\scripts\validate_from_vnet.ps1 -EnvironmentName maf-poc-byo
 ```
+
+### Foundry IQ Markdown ingestion
+
+After `azd provision`, run the ingestion workflow from the administration VM or
+another host that can resolve and reach the private Blob and Search endpoints:
+
+```powershell
+.\scripts\setup_foundry_iq.ps1 `
+  -EnvironmentName maf-poc-byo `
+  -DocumentsPath data\knowledge
+```
+
+The workflow:
+
+1. Approves the two Search-managed private endpoint connections to Blob Storage
+   and the Foundry model endpoint.
+2. Validates the private Storage posture, container, private endpoint and DNS
+   group, shared links, exact RBAC assignments, and model deployments.
+3. Uploads `.md` files recursively with `DefaultAzureCredential`, preserving
+   paths relative to `data\knowledge`.
+4. Creates or updates the Foundry IQ blob knowledge source and knowledge base.
+5. Waits for a cited answer from the knowledge base to verify ingestion.
+
+Upload and ingestion are separate operations: the upload command writes source
+files only, while Foundry IQ performs extraction, chunking, embedding, and Search
+indexing. The knowledge source checks for incremental changes every hour
+(`PT1H`). Re-run the setup command after adding or changing Markdown when an
+immediate validation is needed; otherwise wait for the next scheduled run.
+
+The signed-in upload identity needs **Storage Blob Data Contributor** on the
+dedicated source account. Bicep grants that role to the deploying principal.
+The same principal receives **Search Service Contributor** and **Search Index
+Data Contributor** on the existing Search service so it can create the
+knowledge source and knowledge base.
+The Search managed identity receives **Storage Blob Data Reader** on the source
+account and **Cognitive Services User** on Foundry. No storage key, Search admin
+key, or model key is used.
+
+These non-sensitive azd outputs configure the workflow:
+
+| Setting | Purpose | Default | Required |
+| --- | --- | --- | --- |
+| `AZURE_AI_ACCOUNT_RESOURCE_ID` | Exact Foundry account targeted by private-link approval | Deployment output | Approval |
+| `AZURE_SEARCH_SERVICE_RESOURCE_ID` | Exact Search service containing shared private links | Deployment output | Approval |
+| `AZURE_SEARCH_ENDPOINT` | Existing private Search data-plane endpoint | Deployment output | Setup and validation |
+| `FOUNDRY_IQ_STORAGE_ACCOUNT_NAME` | Dedicated source Storage account name | Deterministic deployment output | Operations |
+| `FOUNDRY_IQ_STORAGE_ACCOUNT_ID` | Dedicated source Storage resource ID | Deployment output | Provisioning |
+| `FOUNDRY_IQ_STORAGE_BLOB_ENDPOINT` | Private Blob endpoint used for upload | Deployment output | Upload |
+| `FOUNDRY_IQ_STORAGE_CONTAINER_NAME` | Source blob container | `knowledge` | Upload and provisioning |
+| `FOUNDRY_IQ_KNOWLEDGE_SOURCE_NAME` | Search knowledge-source name | `maf-poc-knowledge-source` | Provisioning |
+| `FOUNDRY_IQ_KNOWLEDGE_BASE_NAME` | Search knowledge-base name | `maf-poc-knowledge-base` | Provisioning and validation |
+| `FOUNDRY_IQ_INGESTION_INTERVAL` | ISO 8601 incremental refresh interval | `PT1H` | Provisioning |
+| `FOUNDRY_IQ_OPENAI_ENDPOINT` | Foundry model endpoint | Deployment output | Provisioning |
+| `FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME` | Embedding deployment | `foundry-iq-embedding` | Provisioning |
+| `FOUNDRY_IQ_EMBEDDING_MODEL_NAME` | Embedding model identity | `text-embedding-3-large` | Provisioning |
+| `FOUNDRY_IQ_CHAT_DEPLOYMENT_NAME` | Answer-synthesis deployment | `foundry-iq-chat` | Provisioning |
+| `FOUNDRY_IQ_CHAT_MODEL_NAME` | Chat model identity | `gpt-5.4-mini` | Provisioning |
+| `FOUNDRY_IQ_BLOB_SHARED_PRIVATE_LINK_NAME` | Search outbound link to Blob | Deterministic deployment output | Approval and validation |
+| `FOUNDRY_IQ_FOUNDRY_SHARED_PRIVATE_LINK_NAME` | Search outbound link to Foundry models | Deterministic deployment output | Approval and validation |
+
+All values in this table are identifiers or endpoints rather than secrets.
+`setup_foundry_iq.ps1` reads them from the selected azd environment. To run the
+Python commands individually, export the same values into the current process:
+
+```powershell
+.\scripts\validate_foundry_iq_infrastructure.ps1 -EnvironmentName maf-poc-byo
+python -m scripts.upload_knowledge --documents data\knowledge
+python -m scripts.provision_foundry_iq
+python -m scripts.validate_foundry_iq
+```
+
+Search agentic retrieval uses preview API `2026-05-01-preview` and has no
+production SLA. Ingestion and retrieval consume Search capacity plus embedding
+and chat-model tokens; the dedicated Storage account also incurs normal storage
+and transaction charges. Keep Foundry trusted-service bypass enabled for
+ingestion-time model calls while this preview requires it; Blob, Search, and
+Foundry remain private or narrowly allowlisted.
+
+For cleanup, deleting the deployment removes the dedicated source account and
+model deployments. If Search is retained independently, delete the generated
+knowledge base and knowledge source before removing the source account so stale
+generated index and indexer resources do not remain.
 
 Inspect the environment variables captured by the currently published hosted
 agent version:
