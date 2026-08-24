@@ -116,6 +116,24 @@
     "intakeContainerAppsSubnetPrefix": {
       "value": "${AZURE_INTAKE_CONTAINER_APPS_SUBNET_PREFIX=192.168.4.0/23}"
     },
+    "intakeApimSubnetResourceId": {
+      "value": "${AZURE_INTAKE_APIM_SUBNET_ID=}"
+    },
+    "intakeApimSubnetPrefix": {
+      "value": "${AZURE_INTAKE_APIM_SUBNET_PREFIX=192.168.6.0/24}"
+    },
+    "intakeApimPublisherName": {
+      "value": "${AZURE_INTAKE_APIM_PUBLISHER_NAME=Internal Intake Platform}"
+    },
+    "intakeApimPublisherEmail": {
+      "value": "${AZURE_INTAKE_APIM_PUBLISHER_EMAIL}"
+    },
+    "intakeMcpRateLimitCalls": {
+      "value": "${INTAKE_MCP_RATE_LIMIT_CALLS=60}"
+    },
+    "intakeMcpRateLimitRenewalPeriod": {
+      "value": "${INTAKE_MCP_RATE_LIMIT_RENEWAL_PERIOD=60}"
+    },
     "intakeCosmosDatabaseName": {
       "value": "${INTAKE_COSMOS_DATABASE_NAME=intake}"
     },

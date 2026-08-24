@@ -43,6 +43,7 @@ param(
     [int]$ModelCapacity = 250,
 
     [string]$IntakeEntraAudience = $env:INTAKE_ENTRA_AUDIENCE,
+    [string]$IntakeApimPublisherEmail = $env:AZURE_INTAKE_APIM_PUBLISHER_EMAIL,
 
     [string]$AllowedClientIp = "85.210.10.0/24",
     [string]$IpDetectionEndpoint = $env:PUBLIC_IP_ECHO_ENDPOINT,
@@ -67,6 +68,9 @@ $env:AZD_NON_INTERACTIVE = "true"
 
 if ([string]::IsNullOrWhiteSpace($IntakeEntraAudience)) {
     throw "Set INTAKE_ENTRA_AUDIENCE or pass -IntakeEntraAudience with the Microsoft Entra application audience for the intake API."
+}
+if ([string]::IsNullOrWhiteSpace($IntakeApimPublisherEmail)) {
+    throw "Set AZURE_INTAKE_APIM_PUBLISHER_EMAIL or pass -IntakeApimPublisherEmail with the API Management publisher email."
 }
 
 # The destructive delete path is only ever allowed to target this exact,
@@ -487,6 +491,8 @@ Assert-ProvidersRegistered -Namespaces @(
     "Microsoft.ContainerRegistry",
     "Microsoft.Network",
     "Microsoft.App",
+    "Microsoft.ApiManagement",
+    "Microsoft.Web",
     "Microsoft.ContainerService",
     "Microsoft.Compute",
     "Microsoft.Insights",
@@ -564,6 +570,7 @@ try {
         AZURE_ADMIN_VM_USERNAME      = $AdminVmUsername
         INTAKE_ENTRA_TENANT_ID       = $TenantId
         INTAKE_ENTRA_AUDIENCE        = $IntakeEntraAudience
+        AZURE_INTAKE_APIM_PUBLISHER_EMAIL = $IntakeApimPublisherEmail
         DEPENDENCY_STARTUP_CHECKS    = "false"
     }
     foreach ($setting in $settings.GetEnumerator()) {

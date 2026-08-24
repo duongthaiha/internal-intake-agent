@@ -142,11 +142,18 @@ access. Neither endpoint returns configuration or intake data.
 
 Azure API Management can expose selected operations of a managed REST API as
 remote MCP tools, so this service does not implement a second MCP protocol
-server. Import `openapi/intake-api.openapi.json`, select the five intake
-operations, and use APIM's Streamable HTTP MCP endpoint. Configure APIM products,
-authorization, quotas, and policies for callers. Configure APIM's managed
-identity to request a token for `INTAKE_ENTRA_AUDIENCE` and assign only the
-required intake application role.
+server. The Bicep deployment imports `openapi/intake-api.openapi.json`, projects
+all five intake operations, and publishes a Streamable HTTP endpoint at
+`AZURE_INTAKE_MCP_SERVER_URL`. APIM validates a single-tenant Microsoft Entra
+token for `INTAKE_ENTRA_AUDIENCE`, rate limits the caller, and forwards the same
+bearer token to the intake API. The API remains the authority for delegated
+scope, application role, tenant, and record-owner checks.
+
+The intake Container Apps environment disables public network access and has a
+private endpoint in the workload VNet. APIM Standard v2 remains public and uses
+outbound VNet integration plus linked private DNS to reach the private ACA FQDN.
+The ACA URL emitted for deployment wiring is not reachable from the public
+internet.
 
 REST-to-MCP projection currently exposes tools, not MCP resources or prompts,
 and is not supported in APIM workspaces. Avoid APIM policies or global
@@ -189,7 +196,8 @@ network-secured template, adapted for this workload. It creates
 - A delegated `/24` agent subnet and private-endpoint subnet
 - Private endpoints for Storage, Cosmos DB, Azure AI Search, ACR, and Azure Monitor ingestion
 - A dedicated private Storage account and blob container for Foundry IQ sources
-- A Container Apps intake API and separate private Cosmos DB account
+- A private-endpoint-only Container Apps intake API and separate private Cosmos DB account
+- A public APIM Standard v2 gateway with outbound VNet integration and five intake MCP tools
 - Private endpoints and linked Private DNS zones
 - A `gpt-5.6-sol` model deployment
 - Foundry IQ chat and embedding model deployments
@@ -213,7 +221,8 @@ Run preflight without provisioning or deleting resources:
 ```powershell
 .\scripts\deploy_byo.ps1 `
   -PreflightOnly `
-  -IntakeEntraAudience "api://<intake-api-application-id>"
+  -IntakeEntraAudience "api://<intake-api-application-id>" `
+  -IntakeApimPublisherEmail "platform-team@example.com"
 ```
 
 The script defaults `-AllowedClientIp` to `85.210.10.0/24`. An explicitly
@@ -229,6 +238,7 @@ The destructive switch is guarded so it can delete only
 ```powershell
 .\scripts\deploy_byo.ps1 `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
+  -IntakeApimPublisherEmail "platform-team@example.com" `
   -DeleteOldResourceGroup
 ```
 
@@ -251,10 +261,11 @@ image, and leaves the registry private endpoint enabled. Run the workflow from
 that allowlisted range or from a host with private VNet connectivity; it never
 enables unrestricted registry access.
 
-The separate serverless Cosmos account, Container Apps environment, and running
-replicas add Azure cost independently of the hosted agent. The default API scale
-keeps one replica warm and permits five; lower `intakeApiMinReplicas` only after
-accepting cold starts.
+The separate serverless Cosmos account, Container Apps environment, private
+endpoint infrastructure, running replicas, and APIM Standard v2 instance add
+Azure cost independently of the hosted agent. The default API scale keeps one
+replica warm and permits five; lower `intakeApiMinReplicas` only after accepting
+cold starts.
 
 The one-time administration VM password is generated when omitted and stored in
 the local azd environment without being printed. Supply a secure value instead:
@@ -263,11 +274,14 @@ the local azd environment without being printed. Supply a secure value instead:
 $password = Read-Host "Admin VM recovery password" -AsSecureString
 .\scripts\deploy_byo.ps1 `
   -IntakeEntraAudience "api://<intake-api-application-id>" `
+  -IntakeApimPublisherEmail "platform-team@example.com" `
   -AdminVmPassword $password `
   -DeleteOldResourceGroup
 ```
 
-Run control-plane and public-path validation separately:
+Run control-plane validation separately. Set
+`INTAKE_VALIDATION_BEARER_TOKEN` only when an authenticated MCP initialize smoke
+test is required; keep this short-lived token in the process environment:
 
 ```powershell
 .\scripts\validate_byo_deployment.ps1 -EnvironmentName maf-poc-byo
@@ -443,12 +457,23 @@ when creating the dedicated subnet and defaults to `192.168.4.0/23`.
 subnet resource ID; leave it empty for a new VNet and set it when existing VNet
 subnets must not be changed.
 
-`scripts/deploy_byo.ps1` requires `-IntakeEntraAudience` or the
-`INTAKE_ENTRA_AUDIENCE` process environment variable and records the audience
-and deployment tenant in the selected azd environment. When reusing a VNet that
-must not be modified, set `AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID` to an existing
-dedicated subnet delegated to `Microsoft.App/environments`; otherwise the
-template creates `192.168.4.0/23` by default.
+`AZURE_INTAKE_APIM_SUBNET_PREFIX` defaults to `192.168.6.0/24`.
+`AZURE_INTAKE_APIM_SUBNET_ID` optionally supplies an existing dedicated subnet
+with an NSG and `Microsoft.Web/serverFarms` delegation. APIM Standard v2 requires
+the VNet and subnet to be in the same region and subscription as APIM. The
+existing subnet must belong to this deployment's workload VNet so it receives
+the linked ACA private DNS zone.
+`AZURE_INTAKE_APIM_PUBLISHER_NAME` is non-sensitive and defaults to
+`Internal Intake Platform`; `AZURE_INTAKE_APIM_PUBLISHER_EMAIL` is required.
+`INTAKE_MCP_RATE_LIMIT_CALLS` and `INTAKE_MCP_RATE_LIMIT_RENEWAL_PERIOD` are
+non-sensitive integers and default to 60 calls per 60 seconds.
+
+`scripts/deploy_byo.ps1` requires `-IntakeEntraAudience` (or
+`INTAKE_ENTRA_AUDIENCE`) and `-IntakeApimPublisherEmail` (or
+`AZURE_INTAKE_APIM_PUBLISHER_EMAIL`). It records both non-secret values in the
+selected azd environment. When reusing a VNet that must not be modified, supply
+both existing intake and APIM subnet IDs; otherwise the template creates the
+dedicated subnets.
 
 The Cosmos container uses `/session_id` as its partition key.
 
