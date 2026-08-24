@@ -63,9 +63,10 @@
 
 ## Azure identity and security
 
-- The target Azure environment has Azure Policy assignments that deny public network
-	access for database and storage services. Treat these policies as mandatory design
-	constraints, not deployment errors to bypass or exceptions to request.
+- The target Azure environment may have Azure Policy assignments that restrict public
+	network access for database and storage services. Keep access deny-by-default and
+	use private endpoints as the primary path. When explicitly requested and permitted
+	by policy, public access may be enabled only with narrow IP CIDR allowlists.
 - Any IaC change that adds a database, storage account, search service, or similar
 	data service must configure private networking in the same change.  Use managed identity where supported, a
 	a private endpoint for each
@@ -79,29 +80,33 @@
 	provisioning separate from data-plane operations when the deployment runner is
 	outside the private network.
 - Never disable an Azure Policy assignment, add a policy exemption, permit broad IP
-	rules, or enable public access as a workaround. If a required service or deployment
-	flow cannot operate privately, stop and surface the architectural blocker.
+	rules, or enable unrestricted public access as a workaround. Narrow IP CIDR rules
+	may be added when explicitly requested and supported by policy. If the requested
+	flow remains blocked, stop and surface the architectural blocker.
 - Use `DefaultAzureCredential` for application access and managed identities for
 	deployed workloads. Prefer Microsoft Entra ID and Azure RBAC over account keys,
 	connection secrets, or embedded credentials.
 - Never add secrets, access keys, tokens, tenant-specific credentials, or real
 	endpoint values to source control, examples, logs, evaluation data, or generated
 	artifacts. Use placeholders in documentation.
-- Keep local/key authentication disabled for Azure services where supported. Do not
-	add a key-based fallback to a production or hosted-agent code path.
+- Prefer local/key authentication disabled for Azure services where supported. It may
+	be enabled when explicitly requested for a resource, but never commit credentials
+	or add a key-based fallback in application code unless the task requires it.
 - Grant the minimum data-plane and management-plane roles at the narrowest practical
 	scope. Use deterministic role-assignment names and specify the correct principal
 	type. Do not use broad roles such as Owner or Contributor when a service-specific
 	role is sufficient.
-- Database such as SQL, Cosmos DB and Azure AI Search must keep public network access disabled. Any new
-	database, search, or storage dependency must support private connectivity and
-	private DNS from the workload before public access is disabled.
+- Databases such as SQL, Cosmos DB, Azure AI Search, and Storage must remain
+	deny-by-default. Public network access may be enabled when explicitly requested
+	only with narrow IP CIDR allowlists, while preserving private connectivity and
+	private DNS for workload access.
 - Preserve BYO-VNet injection and the private endpoints for Cosmos DB, Storage,
   Azure AI Search, ACR, Foundry, and Azure Monitor. Foundry public inbound access
   must remain deny-by-default with exactly one configured narrow client CIDR; never
   broaden it to an unrestricted public endpoint.
-- Preserve minimum TLS settings, disabled local authentication, and the Cosmos DB
-	`/session_id` partition-key contract.
+- Preserve minimum TLS settings and the Cosmos DB `/session_id` partition-key
+	contract. Preserve the configured local-authentication posture unless the task
+	explicitly requests changing it.
 - Treat Foundry inbound access separately from private outbound access to data
 	services. Do not change the Foundry account's network mode without validating
 	hosted-agent control-plane, deployment, invocation, and BYO-VNet behavior.

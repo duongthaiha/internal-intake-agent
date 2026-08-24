@@ -85,8 +85,9 @@ Foundry samples repository:
   host's CognitiveSearch connection requires that exact configuration
   (documented in upstream's `validate-search-aad-auth.bicep`); disabling local
   auth further is not compatible with the capability host as shipped upstream.
-- Azure Container Registry keeps `publicNetworkAccess: 'Disabled'` (the
-  `developerIpCidr` escape hatch from upstream is left at its default empty
-  value in `main.parameters.json`).
+- Azure Container Registry defaults to `publicNetworkAccess: 'Disabled'`.
+  Supplying `developerIpCidr` enables public access only for that narrow
+  allowlisted IPv4 CIDR, rather than enabling unrestricted public access; the
+  parameter remains empty by default in `main.parameters.json`.
 - No NAT Gateway or Azure Firewall was added to the agent subnet; its
   default/public outbound behavior is unchanged from upstream.
