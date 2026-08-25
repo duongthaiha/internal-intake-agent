@@ -51,10 +51,15 @@ function Get-AzdValueOrDefault {
     )
 
     $value = azd env get-value $Name --environment $EnvironmentName 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($value)) {
+    $text = ($value | Out-String).Trim()
+    if (
+        $LASTEXITCODE -ne 0 -or
+        [string]::IsNullOrWhiteSpace($text) -or
+        $text.StartsWith("ERROR:", [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
         return $Default
     }
-    return $value.Trim()
+    return $text
 }
 
 function Assert-SecurityControlTag {
@@ -111,6 +116,7 @@ $intakeApiUri = Get-AzdValue "SERVICE_INTAKE_API_URI"
 $intakeSubnetId = Get-AzdValue "AZURE_INTAKE_CONTAINER_APPS_SUBNET_ID"
 $intakeApimName = Get-AzdValue "AZURE_INTAKE_APIM_NAME"
 $intakeMcpServerUrl = Get-AzdValue "AZURE_INTAKE_MCP_SERVER_URL"
+$teamsBotServiceResourceId = Get-AzdValueOrDefault "AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID"
 $intakeValidationBearerToken = $env:INTAKE_VALIDATION_BEARER_TOKEN
 
 if ($intakeCosmosAccount -eq $cosmosAccount) {
@@ -567,9 +573,22 @@ if (
     throw "The hosted response was not grounded with '$modelDeployment' and '$ExpectedSource'."
 }
 
+if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
+    & "$PSScriptRoot\validate_teams_publication.ps1" `
+        -EnvironmentName $EnvironmentName `
+        -AgentName $AgentName `
+        -BotServiceResourceId $teamsBotServiceResourceId
+    if ($LASTEXITCODE -ne 0) {
+        throw "Teams publication validation failed."
+    }
+}
+
 Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
 Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
 Write-Output "Intake API: public ACA ingress restricted to APIM, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
 Write-Output "Intake MCP: public APIM Developer gateway, Entra policy, and five REST-backed tools verified at $intakeMcpServerUrl."
+if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
+    Write-Output "Teams: existing Bot Service, Teams channel, Activity endpoint, Responses endpoint, Entra, and BotServiceTenant configuration verified. Network reachability remains externally managed."
+}

@@ -80,6 +80,9 @@
     "allowedClientIpCidr": {
       "value": "${AZURE_ALLOWED_CLIENT_IP_CIDR=85.210.10.0/24}"
     },
+    "existingTeamsBotServiceResourceId": {
+      "value": "${AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID=}"
+    },
     "searchIndexName": {
       "value": "${AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge}"
     },

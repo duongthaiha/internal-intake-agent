@@ -265,6 +265,9 @@ param projectCapHost string = 'caphostproj'
 @description('One client IPv4 CIDR allowed through selected-network rules on template-created data services. Private endpoints remain the primary path and network ACLs stay deny-by-default.')
 param allowedClientIpCidr string = '85.210.10.0/24'
 
+@description('Optional full ARM resource ID of the existing Azure Bot Service used to publish the hosted agent to Teams. The template only references this resource and never creates it.')
+param existingTeamsBotServiceResourceId string = ''
+
 var securityControlTags = {
   SecurityControl: 'Ignore'
 }
@@ -935,6 +938,20 @@ module adminAccess 'modules-local/admin-access.bicep' = if (deployAdminAccess) {
     bastionSubnetPrefix: bastionSubnetPrefix
     adminUsername: adminUsername
     adminPassword: adminPassword
+  }
+}
+
+var teamsBotConfigured = !empty(existingTeamsBotServiceResourceId)
+var teamsBotIdParts = split(existingTeamsBotServiceResourceId, '/')
+var teamsBotSubscriptionId = teamsBotConfigured ? teamsBotIdParts[2] : subscription().subscriptionId
+var teamsBotResourceGroupName = teamsBotConfigured ? teamsBotIdParts[4] : resourceGroup().name
+var teamsBotServiceName = teamsBotConfigured ? teamsBotIdParts[8] : ''
+
+module existingTeamsBot 'modules-local/existing-teams-bot.bicep' = if (teamsBotConfigured) {
+  name: 'existing-teams-bot-${uniqueSuffix}-reference'
+  scope: resourceGroup(teamsBotSubscriptionId, teamsBotResourceGroupName)
+  params: {
+    botServiceName: teamsBotServiceName
   }
 }
 

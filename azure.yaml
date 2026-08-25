@@ -49,6 +49,13 @@ services:
         protocols:
             - protocol: responses
               version: 2.0.0
+        agentEndpoint:
+            protocols:
+                - responses
+                - activity
+            authorizationSchemes:
+                - type: Entra
+                - type: BotServiceTenant
     maf-poc-project:
         host: azure.ai.project
         endpoint: ${FOUNDRY_PROJECT_ENDPOINT}

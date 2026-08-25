@@ -45,6 +45,17 @@ param(
     [string]$IntakeEntraAudience = $env:INTAKE_ENTRA_AUDIENCE,
     [string]$IntakeApimPublisherEmail = $env:AZURE_INTAKE_APIM_PUBLISHER_EMAIL,
 
+    [string]$TeamsBotServiceResourceId = $env:AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID,
+    [string]$TeamsMessagingEndpoint = $env:TEAMS_MESSAGING_ENDPOINT,
+    [string]$TeamsAgentDisplayName = "Internal Intake Agent",
+    [string]$TeamsAppVersion = "1.0.0",
+    [string]$TeamsShortDescription = "Create and manage internal intake requests.",
+    [string]$TeamsFullDescription = "Helps employees develop, review, and submit internal intake requests.",
+    [string]$TeamsDeveloperName = "Internal Intake",
+    [string]$TeamsDeveloperWebsiteUrl = "",
+    [string]$TeamsPrivacyUrl = "",
+    [string]$TeamsTermsOfUseUrl = "",
+
     [string]$AllowedClientIp = "85.210.10.0/24",
     [string]$IpDetectionEndpoint = $env:PUBLIC_IP_ECHO_ENDPOINT,
 
@@ -499,6 +510,26 @@ Assert-ProvidersRegistered -Namespaces @(
     "Microsoft.OperationalInsights",
     "Microsoft.ManagedIdentity"
 )
+if (-not [string]::IsNullOrWhiteSpace($TeamsBotServiceResourceId)) {
+    if (
+        $TeamsBotServiceResourceId -notmatch
+        '^/subscriptions/(?<subscription>[^/]+)/resourceGroups/[^/]+/providers/Microsoft\.BotService/botServices/[^/]+$'
+    ) {
+        throw "-TeamsBotServiceResourceId must identify Microsoft.BotService/botServices."
+    }
+    $teamsBotSubscriptionId = $Matches.subscription
+    $botProviderState = az provider show `
+        --subscription $teamsBotSubscriptionId `
+        --namespace Microsoft.BotService `
+        --query registrationState `
+        --output tsv
+    if ($LASTEXITCODE -ne 0 -or $botProviderState -ne "Registered") {
+        throw (
+            "Microsoft.BotService must be registered in the existing bot's subscription " +
+            "'$teamsBotSubscriptionId'."
+        )
+    }
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $mainBicepPath = Join-Path $repoRoot "infra\main.bicep"
@@ -572,6 +603,18 @@ try {
         INTAKE_ENTRA_AUDIENCE        = $IntakeEntraAudience
         AZURE_INTAKE_APIM_PUBLISHER_EMAIL = $IntakeApimPublisherEmail
         DEPENDENCY_STARTUP_CHECKS    = "false"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TeamsBotServiceResourceId)) {
+        $settings.AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID = $TeamsBotServiceResourceId
+        $settings.TEAMS_MESSAGING_ENDPOINT = $TeamsMessagingEndpoint
+        $settings.TEAMS_AGENT_DISPLAY_NAME = $TeamsAgentDisplayName
+        $settings.TEAMS_APP_VERSION = $TeamsAppVersion
+        $settings.TEAMS_SHORT_DESCRIPTION = $TeamsShortDescription
+        $settings.TEAMS_FULL_DESCRIPTION = $TeamsFullDescription
+        $settings.TEAMS_DEVELOPER_NAME = $TeamsDeveloperName
+        $settings.TEAMS_DEVELOPER_WEBSITE_URL = $TeamsDeveloperWebsiteUrl
+        $settings.TEAMS_PRIVACY_URL = $TeamsPrivacyUrl
+        $settings.TEAMS_TERMS_OF_USE_URL = $TeamsTermsOfUseUrl
     }
     foreach ($setting in $settings.GetEnumerator()) {
         Invoke-Checked {
@@ -682,6 +725,14 @@ try {
     }
     if (-not $deployed) {
         throw "Hosted-agent deployment failed after $RbacRetryCount RBAC propagation retries."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($TeamsBotServiceResourceId)) {
+        Invoke-Checked {
+            & "$PSScriptRoot\publish_teams.ps1" `
+                -EnvironmentName $EnvironmentName `
+                -BotServiceResourceId $TeamsBotServiceResourceId
+        } "Teams and Microsoft 365 publication failed."
     }
 
     # ---------------------------------------------------------------------

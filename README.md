@@ -1293,12 +1293,97 @@ service deploys `maf-poc-agent` to the private project with:
 - Azure AI Search retrieval
 - Microsoft Entra authentication through the hosted agent identity
 - Foundry Responses protocol version `2.0.0`
+- A stable endpoint that retains Responses and adds Activity with
+  `BotServiceTenant` authorization for Microsoft Teams
 - Idempotent Search indexing and Cosmos connectivity validation at startup
 
 Foundry Responses owns history loading and session lifecycle. In hosted mode,
 the Cosmos provider uses `COSMOS_LOAD_MESSAGES=false`, so it records inputs and
 outputs without loading a second copy of conversation history into each model
 request.
+
+## Publish the hosted agent to Teams
+
+The hosted agent continues to run `ResponsesHostServer`. Foundry's stable
+endpoint adapts Microsoft 365 and Teams Activity traffic to that hosted
+Responses implementation; this repository does not run a second Bot Framework
+application.
+
+The Teams workflow is existing-resource-only:
+
+- `AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID` must identify an existing
+  `Microsoft.BotService/botServices` resource with an existing Microsoft Teams
+  channel.
+- The Bot Service `msaAppId` must match the hosted agent's instance-identity
+  principal ID, and its tenant must match `AZURE_TENANT_ID`.
+- `TEAMS_MESSAGING_ENDPOINT` can point to an externally managed HTTPS
+  gateway/reverse proxy. When omitted, it defaults to the direct Foundry
+  Activity endpoint.
+- Publication is always organization-wide `Tenant` scope, which uses
+  `BotServiceTenant` and requires Microsoft 365 administrator approval.
+- Bicep references the Bot Service and Teams channel with `existing`; it never
+  creates them.
+- The scripts do not create app registrations, credentials, networking
+  resources, or a Teams channel.
+
+Configure these non-sensitive azd values:
+
+```powershell
+azd env set AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID `
+  "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.BotService/botServices/<bot-name>"
+azd env set TEAMS_MESSAGING_ENDPOINT `
+  "https://<externally-managed-hostname>/<activity-proxy-path>"
+azd env set TEAMS_AGENT_DISPLAY_NAME "Internal Intake Agent"
+azd env set TEAMS_APP_VERSION "1.0.0"
+azd env set TEAMS_SHORT_DESCRIPTION "Create and manage internal intake requests."
+azd env set TEAMS_FULL_DESCRIPTION "Helps employees develop, review, and submit internal intake requests."
+azd env set TEAMS_DEVELOPER_NAME "<organization-name>"
+azd env set TEAMS_DEVELOPER_WEBSITE_URL "https://<organization-domain>"
+azd env set TEAMS_PRIVACY_URL "https://<organization-domain>/privacy"
+azd env set TEAMS_TERMS_OF_USE_URL "https://<organization-domain>/terms"
+```
+
+`TEAMS_TITLE_ID` is written automatically after a successful repository-driven
+publish. For an app version that was already published elsewhere, set its known
+title ID before running validation.
+
+The publishing identity needs **Foundry User** on the project and permission to
+update the existing Bot Service. The `Microsoft.BotService` resource provider
+must be registered. The Microsoft 365 administrator approves Tenant-scope
+publication in the Microsoft 365 admin center.
+
+After deploying a new hosted-agent version, publish or update Teams metadata:
+
+```powershell
+.\scripts\publish_teams.ps1 -EnvironmentName maf-poc-byo
+.\scripts\validate_teams_publication.ps1 -EnvironmentName maf-poc-byo
+```
+
+`publish_teams.ps1` preserves `responses` and `Entra`, adds `activity` and
+`BotServiceTenant`, updates the existing Bot Service messaging endpoint to
+`TEAMS_MESSAGING_ENDPOINT` (or the direct Activity URL when omitted), and calls
+the Microsoft 365 publish API. Reusing an existing `TEAMS_APP_VERSION`
+is treated as already published; increment the three-part version only when
+updating Teams-visible metadata. New immutable agent versions use the same
+stable endpoint and don't require a metadata republish.
+
+When `AZURE_TEAMS_BOT_SERVICE_RESOURCE_ID` is passed to
+`deploy_byo.ps1`, that workflow performs publication after the final hosted
+agent deployment and includes Teams checks in deployment validation. Omitting
+the value preserves the existing non-Teams deployment behavior.
+
+Foundry networking is intentionally outside this workflow. The repository
+keeps the Foundry account at `publicNetworkAccess=Enabled` with
+`networkAcls.defaultAction=Deny` and one narrow client CIDR; it does not broaden
+the allowlist or provision an internet-facing reverse proxy. The externally
+managed ingress must allow Microsoft Bot Channel Adapter traffic to reach the
+Activity endpoint. A successful Responses smoke test does not validate that
+network path.
+
+Published-agent limitations currently include no streaming responses or
+citations. File uploads and image generation are unavailable in Microsoft 365
+but can be available in Teams. If a tool failure leaves a conversation locked
+or returns `no tool output found`, start a new conversation.
 
 The deployment script first deploys with dependency startup checks disabled so
 the hosted identity can be created. It assigns RBAC, enables
@@ -1312,6 +1397,7 @@ environment has been initialized by `deploy_byo.ps1`:
 azd provision --environment maf-poc-byo
 azd deploy --environment maf-poc-byo
 .\scripts\assign_hosted_agent_roles.ps1 -EnvironmentName maf-poc-byo
+.\scripts\publish_teams.ps1 -EnvironmentName maf-poc-byo
 .\scripts\validate_byo_deployment.ps1 -EnvironmentName maf-poc-byo
 ```
 

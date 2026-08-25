@@ -241,11 +241,36 @@ user's behalf. Both identities are meaningful, but authorization remains
 delegated to the user. With client credentials or managed identity, there is
 no delegated user `oid`; the caller is the bot or service principal.
 
-This repository currently defines the Foundry prompt agent and MCP connection;
-it does not contain a Teams app package, Azure Bot resource, bot messaging
-endpoint, channel adapter, or Activity-protocol service. Therefore Teams cannot
-invoke `prompt-intake-agent` directly from the current deployment. A Teams
-integration needs this bridge:
+The custom bridge described above applies when Teams must invoke the
+`prompt-intake-agent` or another runtime that doesn't expose Foundry's native
+Activity endpoint. The hosted `maf-poc-agent` uses a different, simpler path:
+
+```text
+Teams or Microsoft 365 Copilot
+  -> Microsoft Bot Channel Adapter
+  -> existing Azure Bot Service registration
+  -> Foundry stable Activity endpoint
+  -> hosted ResponsesHostServer agent
+  -> Foundry Toolbox and OAuth2 connection
+  -> APIM
+  -> intake API
+```
+
+For the hosted path, Foundry validates and authorizes Bot Service traffic. The
+stable endpoint retains `responses` plus `Entra` for portal, SDK, CLI, and
+evaluation callers, and adds `activity` plus `BotServiceTenant` for
+organization-wide Teams use. The container continues to run
+`ResponsesHostServer`; a second customer-hosted Bot Framework application is
+not required.
+
+The repository references an existing Azure Bot Service and Teams channel. It
+does not create either resource, and it does not broaden the Foundry account's
+selected-network rules. Secure Bot Channel Adapter reachability to the Activity
+endpoint is an externally managed prerequisite.
+
+The prompt agent still cannot be invoked directly through this hosted-agent
+Activity endpoint. A Teams integration that specifically targets
+`prompt-intake-agent` needs the custom bridge:
 
 ```text
 Teams app package
