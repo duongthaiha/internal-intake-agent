@@ -34,6 +34,7 @@ services:
             FOUNDRY_IQ_KNOWLEDGE_BASE_NAME: ${FOUNDRY_IQ_KNOWLEDGE_BASE_NAME}
             FOUNDRY_IQ_STARTUP_CHECK: ${DEPENDENCY_STARTUP_CHECKS}
             RAG_AUTO_INDEX: "false"
+            TOOLBOX_ENDPOINT: ${TOOLBOX_ENDPOINT}
         codeConfiguration:
             dependencyResolution: remote_build
             entryPoint: agents/hosted/hosted_agent.py

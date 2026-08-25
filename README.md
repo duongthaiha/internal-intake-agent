@@ -28,9 +28,10 @@ agents/
   prompt/   # prompt-agent config and create/update workflow
 ```
 
-The hosted agent retains Cosmos DB history and Azure AI Search retrieval. The
-prompt agent uses Foundry-managed state and the authenticated APIM MCP tools,
-but no RAG provider. Both load
+The hosted agent retains Cosmos DB history and Azure AI Search retrieval and can
+consume the authenticated APIM MCP tools through a Foundry Toolbox. The prompt
+agent uses Foundry-managed state and configures the same MCP tools directly, but
+has no RAG provider. Both load
 `agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
 inside either implementation.
 
@@ -768,6 +769,54 @@ If Azure returns `403 Forbidden`, grant the signed-in identity a Foundry role
 that permits project inference and the required Cosmos DB data-plane role,
 then sign in again. Cosmos mode also requires private network connectivity to
 the provisioned virtual network.
+
+### Hosted agent intake tools
+
+The hosted agent can discover the five APIM-backed intake operations through a
+[Foundry Toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox).
+Toolbox use is optional locally. When `TOOLBOX_ENDPOINT` is absent, the hosted
+agent starts without intake tools; when it is present, the agent limits the
+toolbox surface to:
+
+- `intake_mcp___create_intake_request`
+- `intake_mcp___get_intake_request`
+- `intake_mcp___list_intake_requests`
+- `intake_mcp___replace_intake_request`
+- `intake_mcp___submit_intake_request`
+
+The three underscores are the Foundry Toolbox separator between the MCP server
+label and tool name. Agent Framework requires requester approval before every
+tool execution. The Responses host returns an approval request and continues the
+same response only after the caller approves it. The agent must not report a
+create, replace, or submit operation as successful until the MCP result confirms
+success.
+
+Create the toolbox once in Foundry Portal or Foundry Toolkit:
+
+1. Use the same Foundry project as the hosted agent.
+2. Add one MCP tool with server label `intake_mcp`.
+3. Select the existing delegated OAuth project connection used by the prompt
+   agent.
+4. Allow only the five operations listed above and require approval.
+5. Copy the toolbox consumer MCP endpoint, including `?api-version=v1`, to the
+   non-sensitive `TOOLBOX_ENDPOINT` azd environment value.
+
+Do not put the OAuth client secret in `.env`, `azure.yaml`, or an azd
+environment. The hosted identity authenticates to the toolbox with
+`https://ai.azure.com/.default`; the existing OAuth connection obtains and
+forwards the requester's delegated intake token. Each requester must complete
+the one-time OAuth consent flow. Publishing `TOOLBOX_ENDPOINT` requires a new
+immutable hosted-agent version.
+
+For local toolbox testing, add the endpoint to `.env`:
+
+```dotenv
+TOOLBOX_ENDPOINT=https://<foundry-account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox-name>/mcp?api-version=v1
+```
+
+| Variable | Purpose | Required | Default | Sensitive |
+| --- | --- | --- | --- | --- |
+| `TOOLBOX_ENDPOINT` | Foundry Toolbox consumer MCP endpoint for hosted intake tools | Hosted deployment; optional locally | No tools | No |
 
 ## Prompt agent
 
