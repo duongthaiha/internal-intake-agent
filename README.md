@@ -29,8 +29,9 @@ agents/
 ```
 
 The hosted agent retains Cosmos DB history and Azure AI Search retrieval. The
-prompt agent initially uses Foundry-managed state with no tools or RAG. Both
-load `agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
+prompt agent uses Foundry-managed state and the authenticated APIM MCP tools,
+but no RAG provider. Both load
+`agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
 inside either implementation.
 
 ## Intake request contract
@@ -116,7 +117,10 @@ registration for the API with:
 The API validates the token signature, fixed tenant issuer, audience, lifetime,
 scope, and roles. It derives tenant and creator IDs from token claims; clients
 cannot select them in request bodies. Requesters can access only their own
-records. Privileged roles remain tenant-scoped.
+records. Privileged roles remain tenant-scoped. When
+`INTAKE_ENTRA_AUDIENCE` is an `api://<application-id>` URI, the API and APIM
+also accept the equivalent `<application-id>` audience emitted by Microsoft
+Entra v2 delegated access tokens.
 
 The deployed service uses its managed identity to access a dedicated Cosmos DB
 account. The account disables local authentication and permits public access
@@ -172,6 +176,8 @@ and [MCP server support in API Management](https://learn.microsoft.com/azure/api
 - Permission to create resources and role assignments in the target subscription
 - Available `gpt-5.6-sol` `GlobalStandard` quota in `uksouth`
 - A Microsoft Entra app registration for the intake API audience, scope, and roles
+- A separate confidential Entra client registration for Foundry delegated MCP
+  consent; do not reuse the intake resource API registration as the client
 
 The agent uses `DefaultAzureCredential` for Foundry and Cosmos DB, so no API
 keys are stored locally. The identity needs Cosmos DB data-plane permissions,
@@ -767,7 +773,76 @@ the provisioned virtual network.
 
 The prompt variant is defined by `agents/prompt/config.yaml` and uses the same
 model deployment and project endpoint environment variables as the hosted
-agent. `PROMPT_AGENT_NAME` defaults to `maf-poc-prompt-agent`.
+agent. `PROMPT_AGENT_NAME` defaults to `prompt-intake-agent`. Its APIM MCP tool
+allows the five repository-managed intake operations and requires explicit
+approval before every tool execution.
+
+See [`docs/identity-flow.md`](docs/identity-flow.md) for the complete delegated
+OAuth, token-forwarding, authorization, and troubleshooting flow.
+
+Configure these non-secret values before synchronizing:
+
+| Variable | Purpose | Required | Default | Sensitive |
+| --- | --- | --- | --- | --- |
+| `PROMPT_AGENT_NAME` | Immutable Foundry prompt-agent name | No | `prompt-intake-agent` | No |
+| `AZURE_INTAKE_MCP_SERVER_URL` | APIM Streamable HTTP MCP endpoint | Yes | None | No |
+| `FOUNDRY_INTAKE_MCP_CONNECTION_ID` | Full Foundry project connection resource ID | Yes | None | No |
+
+The project connection must use delegated OAuth2. The intake resource API app
+must expose the user-consent scope `Intake.ReadWrite`, matching
+`INTAKE_DELEGATED_WRITE_SCOPE`. Create a separate, single-tenant confidential
+web client, grant it that delegated permission, and create a Foundry
+`RemoteTool` OAuth2 connection with:
+
+- Target `AZURE_INTAKE_MCP_SERVER_URL`
+- Tenant-specific `/oauth2/v2.0/authorize` and `/oauth2/v2.0/token` endpoints
+- Scope `api://<intake-api-app-id>/Intake.ReadWrite`
+- Scope `offline_access` for refresh
+
+Create the connection with the `azure.ai.connections` azd extension. Pass the
+client secret directly to `azd ai connection create`; never save it in `.env`,
+an azd environment, source control, documentation, or logs. Read the generated
+redirect URL from the connection ARM resource and register that exact value as
+a web redirect URI on the confidential client:
+
+```powershell
+$tenantId = "<tenant-id>"
+$apiAppId = "<intake-api-app-id>"
+$clientAppId = "<oauth-client-app-id>"
+$clientSecret = Read-Host "OAuth client secret"
+$projectEndpoint = "https://<foundry-account>.services.ai.azure.com/api/projects/<project>"
+$mcpUrl = "https://<apim-name>.azure-api.net/intake-mcp/mcp"
+
+$env:AZURE_DEV_USER_AGENT = "microsoft_foundry_skill"
+azd ai connection create "<connection-name>" `
+  --kind remote-tool `
+  --target $mcpUrl `
+  --auth-type oauth2 `
+  --client-id $clientAppId `
+  --client-secret $clientSecret `
+  --authorization-url "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/authorize" `
+  --token-url "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" `
+  --refresh-url "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" `
+  --scopes "api://$apiAppId/Intake.ReadWrite,offline_access" `
+  --project-endpoint $projectEndpoint `
+  --no-prompt
+Remove-Variable clientSecret
+Remove-Item Env:AZURE_DEV_USER_AGENT
+
+$connectionResourceId = "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<foundry-account>/projects/<project>/connections/<connection-name>"
+$redirectUrl = az rest --method get `
+  --url "https://management.azure.com${connectionResourceId}?api-version=2025-06-01" `
+  --query properties.redirectUrl -o tsv
+az ad app update --id "<oauth-client-app-id>" --web-redirect-uris $redirectUrl
+
+$env:FOUNDRY_INTAKE_MCP_CONNECTION_ID = $connectionResourceId
+```
+
+The signed-in operator needs **Foundry User** at the project scope to manage
+the agent and connection. The first tool discovery for each user, connection,
+and project returns an OAuth consent gate. Complete the consent URL with the
+requester's Entra identity. Tenant consent policy can require administrator
+approval even though `Intake.ReadWrite` permits user consent.
 
 Validate its local configuration without calling Foundry:
 
@@ -785,6 +860,14 @@ python -m agents.prompt.sync
 The command uses `DefaultAzureCredential` and requires a project role that can
 manage Foundry agents. It does not delete agents and does not silently fall back
 to another project, model, or authentication method.
+
+After synchronization, invoke a read-only prompt such as "List my intake
+requests." Complete the one-time OAuth consent gate, explicitly approve
+`list_intake_requests`, and continue the same response. The delegated token
+must contain `scp=Intake.ReadWrite`; APIM validates its audience and tenant,
+then ACA enforces the scope and requester ownership. Unauthenticated MCP calls
+must continue to return `401`, and direct ACA calls must remain blocked by its
+APIM IP allowlist.
 
 Shared behavior cases are stored in
 `evals/shared/intake_behavior.jsonl`. Pass the prompt agent's immutable name and

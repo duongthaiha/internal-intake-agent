@@ -1,6 +1,16 @@
 nameEnvironmentVariable: PROMPT_AGENT_NAME
-defaultName: maf-poc-prompt-agent
+defaultName: prompt-intake-agent
 description: Repository-managed prompt variant of the internal intake agent.
 projectEndpointEnvironmentVariable: FOUNDRY_PROJECT_ENDPOINT
 modelEnvironmentVariable: AZURE_AI_MODEL_DEPLOYMENT_NAME
 instructionsPath: agents/shared/instructions/intake_agent.md
+mcpServerLabel: intake_mcp
+mcpServerUrlEnvironmentVariable: AZURE_INTAKE_MCP_SERVER_URL
+mcpConnectionIdEnvironmentVariable: FOUNDRY_INTAKE_MCP_CONNECTION_ID
+mcpAllowedTools:
+  - create_intake_request
+  - get_intake_request
+  - list_intake_requests
+  - replace_intake_request
+  - submit_intake_request
+mcpRequireApproval: always

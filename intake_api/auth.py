@@ -39,12 +39,15 @@ class TokenValidator:
             raise _unauthorized("Bearer token signing metadata is invalid.")
 
         key = await self._get_key(header["kid"])
+        accepted_audiences = [self._settings.entra_audience]
+        if self._settings.entra_audience.lower().startswith("api://"):
+            accepted_audiences.append(self._settings.entra_audience[6:])
         try:
             claims = jwt.decode(
                 token,
                 key=key.key,
                 algorithms=["RS256"],
-                audience=self._settings.entra_audience,
+                audience=accepted_audiences,
                 issuer=self._settings.entra_issuer,
                 options={"require": ["aud", "exp", "iat", "iss", "tid"]},
             )

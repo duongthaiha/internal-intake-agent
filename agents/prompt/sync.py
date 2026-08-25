@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import PromptAgentDefinition
+from azure.ai.projects.models import MCPTool, PromptAgentDefinition
 from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
@@ -27,6 +27,11 @@ class PromptAgentConfig:
     project_endpoint: str
     model: str
     instructions_path: Path
+    mcp_server_label: str
+    mcp_server_url: str
+    mcp_connection_id: str
+    mcp_allowed_tools: tuple[str, ...]
+    mcp_require_approval: str
 
 
 def _required_string(data: dict[str, Any], name: str, source: Path) -> str:
@@ -41,6 +46,26 @@ def _required_environment_variable(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
+
+
+def _required_string_list(
+    data: dict[str, Any],
+    name: str,
+    source: Path,
+) -> tuple[str, ...]:
+    value = data.get(name)
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        raise RuntimeError(
+            f"{source} must define a non-empty string list '{name}'."
+        )
+    normalized = tuple(item.strip() for item in value)
+    if len(set(normalized)) != len(normalized):
+        raise RuntimeError(f"{source} must not define duplicate values in '{name}'.")
+    return normalized
 
 
 def load_prompt_agent_config(path: Path) -> PromptAgentConfig:
@@ -61,6 +86,19 @@ def load_prompt_agent_config(path: Path) -> PromptAgentConfig:
     model_environment_variable = _required_string(
         raw_config, "modelEnvironmentVariable", path
     )
+    mcp_server_url_environment_variable = _required_string(
+        raw_config, "mcpServerUrlEnvironmentVariable", path
+    )
+    mcp_connection_id_environment_variable = _required_string(
+        raw_config, "mcpConnectionIdEnvironmentVariable", path
+    )
+    mcp_require_approval = _required_string(
+        raw_config, "mcpRequireApproval", path
+    )
+    if mcp_require_approval not in {"always", "never"}:
+        raise RuntimeError(
+            f"{path} must define 'mcpRequireApproval' as 'always' or 'never'."
+        )
     instructions_relative_path = Path(
         _required_string(raw_config, "instructionsPath", path)
     )
@@ -78,7 +116,41 @@ def load_prompt_agent_config(path: Path) -> PromptAgentConfig:
         ),
         model=_required_environment_variable(model_environment_variable),
         instructions_path=instructions_path,
+        mcp_server_label=_required_string(raw_config, "mcpServerLabel", path),
+        mcp_server_url=_required_environment_variable(
+            mcp_server_url_environment_variable
+        ),
+        mcp_connection_id=_required_environment_variable(
+            mcp_connection_id_environment_variable
+        ),
+        mcp_allowed_tools=_required_string_list(
+            raw_config, "mcpAllowedTools", path
+        ),
+        mcp_require_approval=mcp_require_approval,
     )
+
+
+def build_prompt_agent_definition(
+    config: PromptAgentConfig,
+) -> PromptAgentDefinition:
+    return PromptAgentDefinition(
+        model=config.model,
+        instructions=load_intake_instructions(config.instructions_path),
+        tools=[
+            MCPTool(
+                server_label=config.mcp_server_label,
+                server_url=config.mcp_server_url,
+                project_connection_id=config.mcp_connection_id,
+                allowed_tools=list(config.mcp_allowed_tools),
+                require_approval=config.mcp_require_approval,
+            )
+        ],
+    )
+
+
+def _tool_value(tool: object) -> object:
+    as_dict = getattr(tool, "as_dict", None)
+    return as_dict() if callable(as_dict) else tool
 
 
 def definitions_match(
@@ -89,7 +161,8 @@ def definitions_match(
         isinstance(current, PromptAgentDefinition)
         and current.model == desired.model
         and current.instructions == desired.instructions
-        and list(current.tools or []) == list(desired.tools or [])
+        and [_tool_value(tool) for tool in current.tools or []]
+        == [_tool_value(tool) for tool in desired.tools or []]
     )
 
 
@@ -99,15 +172,13 @@ def sync_prompt_agent(
     dry_run: bool,
     force: bool,
 ) -> str:
-    definition = PromptAgentDefinition(
-        model=config.model,
-        instructions=load_intake_instructions(config.instructions_path),
-        tools=[],
-    )
+    definition = build_prompt_agent_definition(config)
     if dry_run:
         return (
             f"Would synchronize prompt agent '{config.name}' with model "
-            f"'{config.model}' and no tools."
+            f"'{config.model}' and MCP server '{config.mcp_server_label}' "
+            f"({len(config.mcp_allowed_tools)} allowed tools, approval "
+            f"{config.mcp_require_approval})."
         )
 
     credential = DefaultAzureCredential()

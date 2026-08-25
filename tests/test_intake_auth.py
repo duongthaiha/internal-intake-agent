@@ -86,6 +86,11 @@ class TokenValidatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(frozenset({"Intake.ReadWrite"}), principal.scopes)
         self.assertEqual(frozenset({"Intake.Read.All"}), principal.roles)
 
+    async def test_accepts_v2_client_id_audience_for_api_uri(self) -> None:
+        principal = await self.validator.validate(self.token(aud="intake"))
+
+        self.assertEqual("caller-a", principal.subject_id)
+
     async def test_rejects_wrong_audience_and_tenant(self) -> None:
         with self.assertRaises(HTTPException) as audience_error:
             await self.validator.validate(self.token(aud="api://other"))

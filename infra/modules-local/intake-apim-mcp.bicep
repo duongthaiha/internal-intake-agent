@@ -41,6 +41,7 @@ var mcpPolicyTemplate = '''<policies>
     <validate-azure-ad-token tenant-id="__TENANT_ID__" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Access token is missing or invalid.">
       <audiences>
         <audience>__AUDIENCE__</audience>
+        <audience>__CLIENT_ID_AUDIENCE__</audience>
       </audiences>
     </validate-azure-ad-token>
     <rate-limit-by-key calls="__RATE_CALLS__" renewal-period="__RATE_PERIOD__" counter-key="@(context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;,&quot;anonymous&quot;).GetHashCode().ToString())" />
@@ -60,7 +61,15 @@ var mcpPolicyTemplate = '''<policies>
 </policies>'''
 var mcpPolicyWithTenant = replace(mcpPolicyTemplate, '__TENANT_ID__', entraTenantId)
 var mcpPolicyWithAudience = replace(mcpPolicyWithTenant, '__AUDIENCE__', entraAudience)
-var mcpPolicyWithRateCalls = replace(mcpPolicyWithAudience, '__RATE_CALLS__', string(rateLimitCalls))
+var entraClientIdAudience = startsWith(toLower(entraAudience), 'api://')
+  ? substring(entraAudience, 6)
+  : entraAudience
+var mcpPolicyWithClientIdAudience = replace(
+  mcpPolicyWithAudience,
+  '__CLIENT_ID_AUDIENCE__',
+  entraClientIdAudience
+)
+var mcpPolicyWithRateCalls = replace(mcpPolicyWithClientIdAudience, '__RATE_CALLS__', string(rateLimitCalls))
 var mcpPolicy = replace(mcpPolicyWithRateCalls, '__RATE_PERIOD__', string(rateLimitRenewalPeriod))
 
 resource apim 'Microsoft.ApiManagement/service@2024-05-01' existing = {
