@@ -234,6 +234,13 @@ token, Foundry sees the bot application as the caller. Passing
 `aadObjectId` as message metadata does not convert that app-only call into a
 delegated user call and must not be used as an authorization substitute.
 
+With the correct OBO flow, Foundry does not see "the bot with a user `oid`."
+It receives a delegated user token: `oid` identifies the requester and
+`azp`/`appid` identifies the bot application that requested the token on the
+user's behalf. Both identities are meaningful, but authorization remains
+delegated to the user. With client credentials or managed identity, there is
+no delegated user `oid`; the caller is the bot or service principal.
+
 This repository currently defines the Foundry prompt agent and MCP connection;
 it does not contain a Teams app package, Azure Bot resource, bot messaging
 endpoint, channel adapter, or Activity-protocol service. Therefore Teams cannot
@@ -372,6 +379,47 @@ Application permissions use the configured `Intake.Read.All` and
 | Direct public ACA request | HTTP 403 |
 | Delegated token with wrong scope | HTTP 403 from the intake API |
 | Token with wrong tenant or audience | HTTP 401 |
+
+## Hosted-agent identity diagnostics
+
+The Foundry hosted container does not receive the inbound OBO bearer token or
+its `oid`, `azp`, `aud`, `scp`, or `tid` claims. The hosting platform validates
+the request and exposes only request-scoped platform context:
+
+- A global Foundry per-user ID for state isolation.
+- An opaque Foundry call ID used to resolve delegated caller context for
+  outbound Foundry services such as Toolbox.
+- The hosted session ID when available.
+
+Set `IDENTITY_DIAGNOSTICS_ENABLED=true` only for a controlled published-agent
+test. Each agent run then emits a log similar to:
+
+```text
+foundry.identity_headers x-agent-user-id=sha256:<16 hex chars> x-agent-foundry-call-id=sha256:<16 hex chars> session_id=present
+```
+
+The values are truncated SHA-256 hashes of the platform-supplied header values.
+They can confirm that repeated requests reached the hosted agent with the same
+per-user context and distinguish request call contexts without exposing either
+raw identifier. Presence of both headers confirms that the hosted runtime
+received requester-scoped platform context and can forward the opaque call ID
+to Foundry Toolbox.
+
+This log cannot prove the exact Entra `oid`, `azp`, or `aud` because those
+claims are intentionally not exposed to the container. Validate them at the
+customer-hosted bot immediately after OBO token validation, without logging
+the token, and validate the downstream intake token at APIM or the intake API.
+The expected Teams OBO values are:
+
+```text
+aud=https://ai.azure.com
+oid=<Teams requester object ID>
+azp or appid=<Teams bot application ID>
+```
+
+Keep `IDENTITY_DIAGNOSTICS_ENABLED=false` after the test. Never log the raw
+platform user ID, Teams object ID, bearer token, authorization code, refresh
+token, prompt, response, or intake content.
 
 ## Troubleshooting
 

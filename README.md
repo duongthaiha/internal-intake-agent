@@ -740,6 +740,17 @@ python -m agents.hosted.agent --log-level DEBUG
 python -m agents.hosted.devui --reload --no-open --log-level DEBUG
 ```
 
+For a controlled identity test, set
+`IDENTITY_DIAGNOSTICS_ENABLED=true`. The hosted agent then logs whether
+Foundry supplied per-user, call, and session context plus a truncated SHA-256
+correlation key for the platform user ID. It never logs the raw user ID,
+bearer token, or token claims. Keep this disabled outside a short diagnostic
+window. This optional, non-sensitive boolean accepts the standard
+`true`/`false`, `1`/`0`, `yes`/`no`, and `on`/`off` forms and defaults to
+`false` in application code. The checked-in hosted deployment currently sets
+it to `true` for the controlled identity-flow validation. Restore it to
+`false` after that validation is complete.
+
 `DEBUG` also logs each RAG provider's retrieval result count and every
 retrieved source and chunk. OpenTelemetry response traces remain independently
 controlled by `--tracing` and `--no-tracing`. Use `DEBUG` only for local
@@ -802,7 +813,9 @@ Create the toolbox once in Foundry Portal or Foundry Toolkit:
    agent.
 4. Allow only the five operations listed above and require approval.
 5. Copy the toolbox consumer MCP endpoint, including `?api-version=v1`, to the
-   non-sensitive `TOOLBOX_ENDPOINT` azd environment value.
+   non-sensitive `TOOLBOX_ENDPOINT` azd environment value and add
+   `TOOLBOX_ENDPOINT: ${TOOLBOX_ENDPOINT}` to the hosted service's `env` block
+   in `azure.yaml`.
 
 Do not put the OAuth client secret in `.env`, `azure.yaml`, or an azd
 environment. The hosted identity authenticates to the toolbox with
@@ -810,6 +823,12 @@ environment. The hosted identity authenticates to the toolbox with
 forwards the requester's delegated intake token. Each requester must complete
 the one-time OAuth consent flow. Publishing `TOOLBOX_ENDPOINT` requires a new
 immutable hosted-agent version.
+
+Do not add the hosted environment-variable mapping before a toolbox exists.
+An unresolved azd substitution is published as an empty string, and the agent
+correctly rejects an explicitly empty toolbox endpoint. The deployed
+environment uses toolbox `intake-tools` and connection
+`IntakeMCPServerOAuth`.
 
 For local toolbox testing, add the endpoint to `.env`:
 

@@ -22,6 +22,7 @@ from azure.identity.aio import DefaultAzureCredential
 from dotenv import load_dotenv
 
 from agents.hosted.history import ObservableCosmosHistoryProvider
+from agents.hosted.identity_diagnostics import IdentityDiagnosticsMiddleware
 from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
 from agents.hosted.rag import FoundryIqContextProvider, build_rag_provider
 from agents.shared.instructions import load_intake_instructions
@@ -117,13 +118,18 @@ def build_agent() -> AgentComponents:
     credential = DefaultAzureCredential()
     rag_provider_name, rag_provider = build_rag_provider(credential)
     toolbox = build_toolbox(credential, project_endpoint)
+    identity_diagnostics_enabled = get_boolean_setting(
+        "IDENTITY_DIAGNOSTICS_ENABLED",
+        False,
+    )
     logger.info(
         "Building agent with model=%s, history_provider=%s, rag_provider=%s, "
-        "toolbox_enabled=%s",
+        "toolbox_enabled=%s, identity_diagnostics_enabled=%s",
         model,
         history_provider_name,
         rag_provider_name,
         toolbox is not None,
+        identity_diagnostics_enabled,
     )
 
     if history_provider_name == "cosmos":
@@ -157,6 +163,11 @@ def build_agent() -> AgentComponents:
         disable_file_memory=True,
         mode_provider=AgentModeProvider(default_mode="execute"),
         default_options={"store": False},
+        middleware=(
+            [IdentityDiagnosticsMiddleware()]
+            if identity_diagnostics_enabled
+            else None
+        ),
     )
 
     return AgentComponents(
