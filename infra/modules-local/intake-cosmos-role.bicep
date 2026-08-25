@@ -4,10 +4,7 @@ param accountName string
 @description('Name of the intake Cosmos DB SQL database.')
 param databaseName string
 
-@description('Name of the intake Cosmos DB SQL container.')
-param containerName string
-
-@description('Principal ID of the Container App system-assigned managed identity.')
+@description('Principal ID of the developer or operator that needs direct intake data access.')
 param principalId string
 
 resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = {
@@ -15,15 +12,15 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = {
 }
 
 var dataContributorRoleDefinitionId = '00000000-0000-0000-0000-000000000002'
-var containerScope = '${account.id}/dbs/${databaseName}/colls/${containerName}'
+var databaseScope = '${account.id}/dbs/${databaseName}'
 
 resource roleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: account
-  name: guid(account.id, principalId, dataContributorRoleDefinitionId, containerScope)
+  name: guid(account.id, principalId, dataContributorRoleDefinitionId, databaseScope)
   properties: {
     roleDefinitionId: '${account.id}/sqlRoleDefinitions/${dataContributorRoleDefinitionId}'
     principalId: principalId
-    scope: containerScope
+    scope: databaseScope
   }
 }
 

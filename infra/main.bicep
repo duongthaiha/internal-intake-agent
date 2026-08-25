@@ -857,6 +857,15 @@ module intakeIdentity 'modules-local/intake-identity.bicep' = {
   }
 }
 
+module intakeDeveloperCosmosRole 'modules-local/intake-cosmos-role.bicep' = {
+  name: 'intake-developer-cosmos-role-${uniqueSuffix}-deployment'
+  params: {
+    accountName: intakeCosmos.outputs.accountName
+    databaseName: intakeCosmos.outputs.databaseName
+    principalId: principalId
+  }
+}
+
 module intakeApimService 'modules-local/intake-apim-service.bicep' = {
   name: 'intake-apim-service-${uniqueSuffix}-deployment'
   params: {

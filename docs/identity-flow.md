@@ -33,7 +33,7 @@ authorization codes, access tokens, and refresh tokens remain sensitive.
 | --- | --- | --- |
 | Entra tenant ID | `c214aaa8-7a43-441a-b501-f942c96f54a8` | Tenant accepted by APIM and the intake API |
 | Intake API application ID | `09ff0241-0547-4231-9496-67121269632b` | Resource application that exposes `Intake.ReadWrite` |
-| Intake API application ID URI | `api://09ff0241-0547-4231-9496-67121269632b` | Scope namespace and accepted API audience |
+| Intake API application ID URI | `api://09ff0241-0547-4231-9496-67121269632b` | Namespace used to request the API scope; retained as a compatible audience |
 | Foundry OAuth client application ID | `931638a3-66d5-4ab5-9564-b1847201c9ca` | Confidential client used by the Foundry connection |
 | Foundry connection name | `IntakeMCPServerOAuth` | Stores OAuth configuration and requester grants |
 | Prompt agent name and version | `prompt-intake-agent`, version 5 | Agent that owns the approval-gated MCP tool |
@@ -45,11 +45,11 @@ authorization codes, access tokens, and refresh tokens remain sensitive.
 | Hop or artifact | Token issuer | Expected `aud` | Important IDs and claims | Component action |
 | --- | --- | --- | --- | --- |
 | Teams activity through Bot Framework | Microsoft/Bot Framework channel | Configured Azure Bot application ID | Tenant ID and `from.aadObjectId` | Azure Bot routes it; the hosted bot validates it with the supported channel SDK |
-| Optional Teams SSO token | Microsoft Entra ID | Teams app/API application ID or URI | `tid`, `oid`, `azp`/`appid`, configured Teams scopes | Use only for the Teams app's own SSO flow; do not forward it to APIM |
-| Channel adapter to Foundry | Microsoft Entra ID | Foundry resource, normally `https://ai.azure.com` | Caller/service identity, project RBAC | Authenticate the Foundry invocation and bind it to the requester context |
+| Teams SSO user assertion | Microsoft Entra ID | Teams/bot app application ID or URI | Requester `tid` and `oid`; client is the Teams/bot app | Hosted bot uses it as the user assertion for OBO; do not forward it to Foundry or APIM |
+| Hosted bot to Foundry | Microsoft Entra ID OBO exchange | Foundry resource, normally `https://ai.azure.com` | Same requester `tid` and `oid`; `azp`/`appid` identifies the bot app | Invoke Foundry with the delegated requester token; requester needs Foundry Agent Consumer |
 | OAuth authorization request | No bearer token yet | Not applicable | `client_id=931638a3-66d5-4ab5-9564-b1847201c9ca`, redirect URI, requested scopes | Entra authenticates the requester and records delegated consent |
 | OAuth authorization code | Microsoft Entra ID | Confidential OAuth client | Short-lived, single-use code bound to client and redirect URI | Foundry connection redeems it; never expose or persist it |
-| Intake delegated access token | Microsoft Entra ID | `09ff0241-0547-4231-9496-67121269632b` or `api://09ff0241-0547-4231-9496-67121269632b` | `tid=c214...`, requester `oid`, `scp=Intake.ReadWrite`, client `azp=931638a3...` for v2 tokens | Foundry sends it to APIM; APIM and ACA validate it |
+| Intake delegated access token | Microsoft Entra ID | Normally `09ff0241-0547-4231-9496-67121269632b` for this v2 API; `api://09ff0241-0547-4231-9496-67121269632b` is also accepted for compatibility | `tid=c214...`, requester `oid`, `scp=Intake.ReadWrite`, client `azp=931638a3...` for v2 tokens | Foundry sends it to APIM; APIM and ACA validate it |
 | Intake refresh token | Microsoft Entra ID | OAuth client/token endpoint context | Bound to requester, client, tenant, and consent | Foundry connection stores and uses it to renew access; never forward to APIM |
 | APIM to ACA | Microsoft Entra ID | Same intake API audience as above | Same `tid`, `oid`, `scp`, and `azp`; token is unchanged | APIM forwards the original `Authorization` header |
 | ACA to Cosmos DB | Microsoft Entra ID | Cosmos DB, requested with `https://cosmos.azure.com/.default` | ACA managed-identity object/client ID and Cosmos RBAC roles | Cosmos SDK obtains a separate managed-identity token; requester token is not reused |
@@ -140,7 +140,11 @@ sequenceDiagram
     BotService->>BotApp: Signed activity to messaging endpoint
     BotApp->>BotApp: Validate channel token, app audience, and tenant
     BotApp->>BotApp: Resolve aadObjectId to requester context
-    BotApp->>Agent: Invoke agent as that requester
+    BotApp->>Teams: Request Teams SSO token for requester
+    Teams-->>BotApp: User assertion for bot app audience
+    BotApp->>Entra: OBO exchange for https://ai.azure.com
+    Entra-->>BotApp: Delegated Foundry token with requester oid
+    BotApp->>Agent: Invoke Foundry with delegated requester token
     Agent->>Connection: Discover or call intake MCP tool
     alt No delegated intake consent for this requester
         Connection-->>Agent: OAuth consent request
@@ -191,6 +195,12 @@ and must:
   activity.
 - Require the expected tenant and use the activity's Entra object ID, such as
   `from.aadObjectId`, as the stable requester identifier.
+- Obtain a Teams SSO token for that user and use it as the assertion in a
+  Microsoft Entra on-behalf-of exchange for the Foundry audience
+  `https://ai.azure.com`.
+- Invoke the Foundry Responses API with the resulting delegated user token, not
+  with the bot's managed identity or app-only token. The user needs at least
+  **Foundry Agent Consumer** on the project.
 - Keep the same requester identity when starting and continuing the Foundry
   conversation, OAuth consent, and MCP approval flow.
 - Treat display name, email address, conversation ID, and Teams user ID as
@@ -201,9 +211,28 @@ and must:
   the same Foundry response only after the requester approves it.
 
 The Teams channel token, bot token, and any Teams SSO token must not be
-forwarded to APIM as the intake bearer token. The Foundry OAuth2 connection
-must acquire the token for the intake API audience with
+forwarded to APIM as the intake bearer token. The Teams SSO token is exchanged
+for a Foundry user token. Foundry then uses the OAuth2 project connection to
+acquire a separate token for the intake API audience with
 `scp=Intake.ReadWrite`.
+
+`from.aadObjectId` by itself does not pass identity to Foundry. It is an
+identifier used to correlate the activity with the user. The cryptographic
+identity reaching Foundry is the delegated OBO token:
+
+```text
+Teams user session
+  -> Teams SSO assertion (audience: bot app)
+  -> Entra OBO exchange
+  -> Foundry user token (audience: https://ai.azure.com, oid: Teams user)
+  -> Foundry OAuth connection
+  -> Intake API token (audience: intake API, oid: same user)
+```
+
+If the bot invokes Foundry with its managed identity or client-credentials
+token, Foundry sees the bot application as the caller. Passing
+`aadObjectId` as message metadata does not convert that app-only call into a
+delegated user call and must not be used as an authorization substitute.
 
 This repository currently defines the Foundry prompt agent and MCP connection;
 it does not contain a Teams app package, Azure Bot resource, bot messaging
@@ -241,10 +270,20 @@ scp=Intake.ReadWrite
 oid=<requester object ID>
 ```
 
-Microsoft Entra v2 can emit the token audience as either the configured
-`api://<application-id>` identifier or its equivalent `<application-id>`
-client ID. APIM and the intake API accept both forms. They do not accept an
-unrelated audience.
+The two formats identify the same resource application but have different
+roles:
+
+- `api://09ff0241-0547-4231-9496-67121269632b` is the **Application ID URI**.
+  It namespaces the delegated scope requested as
+  `api://09ff0241-0547-4231-9496-67121269632b/Intake.ReadWrite`.
+- `09ff0241-0547-4231-9496-67121269632b` is the application's **client ID**.
+  Because this resource registration requests v2 access tokens, this GUID is
+  the normal `aud` claim in the issued token.
+
+APIM and the intake API accept both equivalent values for compatibility with
+tokens or clients using the Application ID URI audience. They do not accept an
+unrelated audience. Accepting both does not grant access to another
+application: both values resolve to this same intake API registration.
 
 ### Foundry confidential client
 
@@ -293,7 +332,7 @@ APIM and the intake API validate the same bearer token independently.
 | Teams client | Authenticates the Microsoft 365 session and presents consent and approval UI | Decide API authorization from display name, email, or Teams user ID |
 | Teams app package | Associates the Teams installation with the configured bot application ID and permissions | Host runtime logic or store OAuth connection secrets |
 | Azure Bot/Bot Framework service | Registers the Teams channel and routes activities between Teams and the messaging endpoint | Act as the intake requester or call APIM directly |
-| Hosted bot application | Validates channel tokens, tenant, and bot audience; maps `aadObjectId` to the Foundry requester context | Forward the bot or Teams SSO token to the intake API |
+| Hosted bot application | Validates channel tokens, obtains the Teams SSO assertion, performs OBO for a delegated Foundry token, and preserves the requester `oid` | Invoke Foundry app-only when requester-scoped MCP access is required, or forward Teams tokens to APIM |
 | Foundry prompt agent | Chooses an allowed tool and generates an MCP approval request | Execute an approval-gated tool before requester approval |
 | Foundry OAuth2 connection | Runs authorization-code consent, stores delegated grants, refreshes tokens, and attaches the intake token | Expose client secrets, refresh tokens, or authorization codes |
 | Microsoft Entra ID | Authenticates the requester and issues tokens for the requested resource and scopes | Grant an unconfigured audience or scope |

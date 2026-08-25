@@ -120,8 +120,9 @@ scope, and roles. It derives tenant and creator IDs from token claims; clients
 cannot select them in request bodies. Requesters can access only their own
 records. Privileged roles remain tenant-scoped. When
 `INTAKE_ENTRA_AUDIENCE` is an `api://<application-id>` URI, the API and APIM
-also accept the equivalent `<application-id>` audience emitted by Microsoft
-Entra v2 delegated access tokens.
+also accept the equivalent `<application-id>` audience. The application URI is
+used to name scopes, while Microsoft Entra v2 access tokens normally contain
+the GUID application ID in `aud`.
 
 The deployed service uses its managed identity to access a dedicated Cosmos DB
 account. The account disables local authentication and permits public access
@@ -136,7 +137,9 @@ context but does not delete data automatically.
 
 To run the API locally, use a host with private connectivity to the deployed
 intake Cosmos private endpoint, sign in with an identity that has the Cosmos DB
-data role, populate the `INTAKE_*` settings shown in `.env.example`, and run:
+data role, populate the `INTAKE_*` settings shown in `.env.example`, and run.
+The Bicep deployment grants the deploying principal Cosmos DB Built-in Data
+Contributor on only the dedicated `intake` database:
 
 ```powershell
 uvicorn intake_api.app:app --host 127.0.0.1 --port 8000
