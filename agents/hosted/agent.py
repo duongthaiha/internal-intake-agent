@@ -6,6 +6,7 @@ import logging
 import os
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlsplit
 
 from agent_framework import (
     Agent,
@@ -14,6 +15,7 @@ from agent_framework import (
     create_harness_agent,
 )
 from agent_framework.foundry import FoundryChatClient
+from agent_framework_foundry_hosting import FoundryToolbox
 from agent_framework_azure_ai_search import AzureAISearchContextProvider
 from agent_framework_azure_cosmos import CosmosHistoryProvider
 from azure.identity.aio import DefaultAzureCredential
@@ -26,6 +28,14 @@ from agents.shared.instructions import load_intake_instructions
 
 
 logger = logging.getLogger(__name__)
+
+INTAKE_TOOLBOX_TOOLS = (
+    "intake_mcp___create_intake_request",
+    "intake_mcp___get_intake_request",
+    "intake_mcp___list_intake_requests",
+    "intake_mcp___replace_intake_request",
+    "intake_mcp___submit_intake_request",
+)
 
 
 def get_required_setting(name: str) -> str:
@@ -62,6 +72,40 @@ class AgentComponents:
     history_provider_name: str
     rag_provider: object | None
     rag_provider_name: str
+    toolbox: FoundryToolbox | None
+
+
+def build_toolbox(
+    credential: DefaultAzureCredential,
+    project_endpoint: str,
+) -> FoundryToolbox | None:
+    endpoint = os.getenv("TOOLBOX_ENDPOINT")
+    if endpoint is None:
+        return None
+    endpoint = endpoint.strip()
+    if not endpoint:
+        raise RuntimeError("TOOLBOX_ENDPOINT must not be empty when configured.")
+
+    project_url = urlsplit(project_endpoint)
+    toolbox_url = urlsplit(endpoint)
+    project_path = project_url.path.rstrip("/")
+    expected_toolbox_path = f"{project_path}/toolboxes/"
+    if (
+        toolbox_url.scheme != "https"
+        or toolbox_url.netloc.lower() != project_url.netloc.lower()
+        or not toolbox_url.path.startswith(expected_toolbox_path)
+        or not toolbox_url.path.endswith("/mcp")
+        or parse_qs(toolbox_url.query).get("api-version") != ["v1"]
+    ):
+        raise RuntimeError(
+            "TOOLBOX_ENDPOINT must be an HTTPS Foundry Toolbox MCP endpoint "
+            "within FOUNDRY_PROJECT_ENDPOINT and include '?api-version=v1'."
+        )
+
+    toolbox = FoundryToolbox(credential, url=endpoint)
+    toolbox.allowed_tools = INTAKE_TOOLBOX_TOOLS
+    toolbox.approval_mode = "always_require"
+    return toolbox
 
 
 def build_agent() -> AgentComponents:
@@ -72,11 +116,14 @@ def build_agent() -> AgentComponents:
     history_provider_name = get_history_provider_name()
     credential = DefaultAzureCredential()
     rag_provider_name, rag_provider = build_rag_provider(credential)
+    toolbox = build_toolbox(credential, project_endpoint)
     logger.info(
-        "Building agent with model=%s, history_provider=%s, rag_provider=%s",
+        "Building agent with model=%s, history_provider=%s, rag_provider=%s, "
+        "toolbox_enabled=%s",
         model,
         history_provider_name,
         rag_provider_name,
+        toolbox is not None,
     )
 
     if history_provider_name == "cosmos":
@@ -104,6 +151,7 @@ def build_agent() -> AgentComponents:
             "Use tools deliberately and report uncertainty clearly."
         ),
         agent_instructions=load_intake_instructions(),
+        tools=toolbox,
         history_provider=history_provider,
         context_providers=[rag_provider] if rag_provider else None,
         disable_file_memory=True,
@@ -118,6 +166,7 @@ def build_agent() -> AgentComponents:
         history_provider_name=history_provider_name,
         rag_provider=rag_provider,
         rag_provider_name=rag_provider_name,
+        toolbox=toolbox,
     )
 
 
