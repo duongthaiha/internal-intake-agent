@@ -1,12 +1,6 @@
 @description('Name of the dedicated intake Cosmos DB account.')
 param accountName string
 
-@description('Name of the intake Cosmos DB SQL database.')
-param databaseName string
-
-@description('Name of the intake Cosmos DB SQL container.')
-param containerName string
-
 @description('Object ID of the Azure AI Search system-assigned managed identity.')
 param searchPrincipalId string
 
@@ -30,15 +24,14 @@ resource cosmosAccountReaderAssignment 'Microsoft.Authorization/roleAssignments@
 }
 
 var dataReaderRoleDefinitionId = '00000000-0000-0000-0000-000000000001'
-var containerScope = '${account.id}/dbs/${databaseName}/colls/${containerName}'
 
 resource roleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-11-15' = {
   parent: account
-  name: guid(account.id, searchPrincipalId, dataReaderRoleDefinitionId, containerScope)
+  name: guid(account.id, searchPrincipalId, dataReaderRoleDefinitionId)
   properties: {
     roleDefinitionId: '${account.id}/sqlRoleDefinitions/${dataReaderRoleDefinitionId}'
     principalId: searchPrincipalId
-    scope: containerScope
+    scope: account.id
   }
 }
 

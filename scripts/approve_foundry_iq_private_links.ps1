@@ -53,7 +53,10 @@ function Approve-SearchConnection {
     $searchConnections = @(
         $connections | Where-Object {
             $_.properties.privateLinkServiceConnectionState.status -eq "Pending" -and
-            $_.properties.groupIds -contains $ConnectionGroupId -and
+            (
+                $null -eq $_.properties.groupIds -or
+                $_.properties.groupIds -contains $ConnectionGroupId
+            ) -and
             $_.properties.privateLinkServiceConnectionState.description -eq $RequestMessage
         }
     )

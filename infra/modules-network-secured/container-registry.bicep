@@ -43,7 +43,7 @@ param projectPrincipalId string = ''
 param resourceTags object
 
 // ---- ACR Resource ----
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-11-01' = {
   name: acrName
   location: location
   tags: resourceTags
@@ -54,6 +54,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
     adminUserEnabled: false
     publicNetworkAccess: empty(developerIpCidr) ? 'Disabled' : 'Enabled'
     networkRuleBypassOptions: 'AzureServices'
+    networkRuleBypassAllowedForTasks: true
     networkRuleSet: empty(developerIpCidr) ? null : {
       defaultAction: 'Deny'
       ipRules: [
@@ -134,6 +135,57 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
     principalId: projectPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ---- Identity-backed intake image build task ----
+// Runs use a local context override; the stored Azure sample context only keeps
+// the trigger-free task definition valid between deployments.
+resource intakeBuildTask 'Microsoft.ContainerRegistry/registries/tasks@2019-06-01-preview' = {
+  parent: containerRegistry
+  name: 'intake-api-build'
+  location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    status: 'Enabled'
+    timeout: 3600
+    platform: {
+      os: 'Linux'
+      architecture: 'amd64'
+    }
+    agentConfiguration: {
+      cpu: 2
+    }
+    credentials: {
+      sourceRegistry: any({
+        identity: '[system]'
+      })
+    }
+    step: {
+      type: 'Docker'
+      contextPath: 'https://github.com/Azure-Samples/acr-tasks.git#:hello-world'
+      dockerFilePath: 'Dockerfile'
+      imageNames: [
+        'intake-api:{{.Run.ID}}'
+      ]
+      isPushEnabled: true
+      noCache: false
+    }
+    trigger: {}
+  }
+}
+
+var acrPushRoleId = '8311e382-0749-4cb8-b61a-304f252e45ec' // AcrPush built-in role
+
+resource intakeBuildTaskPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(containerRegistry.id, intakeBuildTask.id, acrPushRoleId)
+  scope: containerRegistry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPushRoleId)
+    principalId: intakeBuildTask.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }

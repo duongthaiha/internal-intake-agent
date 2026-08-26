@@ -866,8 +866,6 @@ module intakeSearchCosmosRole 'modules-local/intake-search-cosmos-role.bicep' = 
   name: 'intake-search-cosmos-role-${uniqueSuffix}-${intakeSearchConfigurationSuffix}'
   params: {
     accountName: intakeCosmos.outputs.accountName
-    databaseName: intakeCosmos.outputs.databaseName
-    containerName: intakeCosmos.outputs.containerName
     searchPrincipalId: aiDependencies.outputs.aiSearchPrincipalId
   }
 }

@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import httpx
+
 from scripts.provision_intake_search import (
     IntakeSearchConfig,
     build_data_source,
@@ -47,6 +49,33 @@ class IntakeSearchProvisioningTests(unittest.TestCase):
 
         self.assertEqual("Bearer test-token", headers["Authorization"])
 
+    def test_search_client_accepts_empty_success_response(self) -> None:
+        credential = SimpleNamespace(
+            get_token=Mock(return_value=SimpleNamespace(token="test-token"))
+        )
+        client = SearchRestClient(
+            "https://search.example.test",
+            credential,
+        )
+        client._client = SimpleNamespace(
+            put=Mock(
+                return_value=httpx.Response(
+                    204,
+                    request=httpx.Request(
+                        "PUT",
+                        "https://search.example.test/indexes/test",
+                    ),
+                )
+            ),
+            close=Mock(),
+        )
+        try:
+            response = client.put("indexes", "test", {})
+        finally:
+            client.close()
+
+        self.assertEqual({}, response)
+
     def test_index_is_hybrid_ready_and_security_fields_are_filterable(
         self,
     ) -> None:
@@ -81,6 +110,10 @@ class IntakeSearchProvisioningTests(unittest.TestCase):
             ],
         )
         self.assertIn("IS_DEFINED(c.searchText)", payload["container"]["query"])
+        self.assertIn(
+            "c._ts > @HighWaterMark",
+            payload["container"]["query"],
+        )
 
     def test_skillset_and_indexer_map_the_embedding(self) -> None:
         skill = build_skillset(config())["skills"][0]

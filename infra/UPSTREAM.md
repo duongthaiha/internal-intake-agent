@@ -60,7 +60,12 @@ Foundry samples repository:
 4. **`infra/modules-network-secured/ai-project-identity.bicep`** and
    **`container-registry.bicep`** apply the same tag to the template-created
    Foundry project and ACR. ACR retains its private endpoint and uses the same
-   selected-network CIDR with `defaultAction: 'Deny'`.
+   selected-network CIDR with `defaultAction: 'Deny'`. It also explicitly sets
+   `networkRuleBypassAllowedForTasks: true`, using the stable API that exposes
+   the setting, so
+   the identity-backed intake image build task works without transient
+   shared-worker IP allowlists. The standard `azd` QuickRun path is not used
+   because it does not authenticate with the task's system identity.
 
 5. **`infra/modules-network-secured/application-insights.bicep`** gained one
    additional output, `appInsightsConnectionString`, so `main.bicep` can
@@ -117,6 +122,9 @@ Foundry samples repository:
 - Azure Container Registry defaults to selected-network public access for
   `85.210.10.0/24` and retains its private endpoint. The
   `AZURE_ACR_DEVELOPER_IP_CIDR` environment contract remains available for an
-  explicitly approved override; unrestricted public access is never enabled.
+  explicitly approved override. Authenticated ACR Tasks are explicitly allowed
+  to bypass the network rules for the identity-backed `intake-api-build` task;
+  shared build-worker IPs are not added to the firewall, and unrestricted public
+  access is never enabled.
 - No NAT Gateway or Azure Firewall was added to the agent subnet; its
   default/public outbound behavior is unchanged from upstream.

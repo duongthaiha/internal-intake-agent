@@ -13,6 +13,8 @@
       - The agent subnet has the Microsoft.App/environments delegation.
       - Foundry, Cosmos DB, Azure AI Search, Storage, and Container Registry
         carry the expected security tag and selected-network ACL.
+      - Container Registry explicitly permits authenticated ACR Tasks to bypass
+        its network rules for azd remote builds.
       - Every private endpoint connection is Approved (count + status).
       - Every expected private DNS zone has a Succeeded VNet link.
       - The hosted agent is reachable and its response is grounded (includes
@@ -460,20 +462,30 @@ if (-not $storageAccountIsExisting) {
 # Container Registry posture (optional)
 # ---------------------------------------------------------------------------
 if ($acrName) {
-    $acr = az acr show --name $acrName --resource-group $resourceGroup --output json | ConvertFrom-Json
+    $acr = az resource show `
+        --namespace Microsoft.ContainerRegistry `
+        --resource-type registries `
+        --name $acrName `
+        --resource-group $resourceGroup `
+        --api-version 2025-11-01 `
+        --output json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect Container Registry '$acrName'."
     }
     Assert-SecurityControlTag -Resource $acr -DisplayName "Container Registry '$acrName'"
-    if ($acr.publicNetworkAccess -ne "Enabled" -or $acr.networkRuleSet.defaultAction -ne "Deny") {
+    if ($acr.properties.publicNetworkAccess -ne "Enabled" -or $acr.properties.networkRuleSet.defaultAction -ne "Deny") {
         throw "Container Registry '$acrName' must use selected-network public access with networkRuleSet.defaultAction Deny."
     }
     $acrIpRules = @(
-        $acr.networkRuleSet.ipRules | ForEach-Object {
+        $acr.properties.networkRuleSet.ipRules | ForEach-Object {
             if ($_.ipAddressOrRange) { $_.ipAddressOrRange } else { $_.value }
         }
     )
     Assert-SingleIpRule -Rules $acrIpRules -ExpectedValue $acrDeveloperIpCidr -DisplayName "Container Registry '$acrName'"
+
+    if ($acr.properties.networkRuleBypassAllowedForTasks -ne $true) {
+        throw "Container Registry '$acrName' must explicitly enable networkRuleBypassAllowedForTasks for azd remote builds."
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -591,7 +603,7 @@ if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
 
 Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
-Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
+Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry with authenticated ACR Tasks bypass' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
 Write-Output "Intake API: public ACA ingress restricted to APIM, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
 Write-Output "Intake Search: managed-identity Cosmos indexer, integrated vectorization, scheduled indexing, private link, and container-scoped reader role verified."

@@ -8,3 +8,5 @@ __pycache__/
 .foundry/schedules/
 .foundry/datasets/
 .foundry/agent-metadata.yaml
+appPackage.zip
+.appPackage.zip.azd-generated

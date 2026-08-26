@@ -118,6 +118,58 @@ function Get-AzdValue {
     return $value.Trim()
 }
 
+function Publish-IntakeApi {
+    param(
+        [Parameter(Mandatory)][string]$EnvironmentName,
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [int]$TimeoutMinutes = 30
+    )
+
+    $acrName = Get-AzdValue "AZURE_CONTAINER_REGISTRY_NAME"
+    $acrLoginServer = Get-AzdValue "AZURE_CONTAINER_REGISTRY_ENDPOINT"
+    $taskName = "intake-api-build"
+
+    $runId = az acr task run `
+        --name $taskName `
+        --registry $acrName `
+        --context $RepositoryRoot `
+        --file Dockerfile.intake `
+        --no-logs `
+        --no-wait `
+        --query runId `
+        --output tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($runId)) {
+        throw "Unable to queue the identity-backed ACR build task '$taskName'."
+    }
+    $runId = $runId.Trim()
+
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    do {
+        Start-Sleep -Seconds 15
+        $status = az acr task show-run `
+            --registry $acrName `
+            --run-id $runId `
+            --query status `
+            --output tsv
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read ACR build run '$runId'."
+        }
+        Write-Output "Intake image build '$runId': $status"
+    } while ($status -notin @("Succeeded", "Failed", "Canceled", "Error") -and (Get-Date) -lt $deadline)
+
+    if ($status -ne "Succeeded") {
+        throw "Identity-backed ACR build '$runId' finished with status '$status'."
+    }
+
+    $image = "$acrLoginServer/intake-api:$runId"
+    Invoke-Checked {
+        azd deploy intake-api `
+            --environment $EnvironmentName `
+            --from-package $image `
+            --no-prompt
+    } "Intake API deployment from prebuilt image '$image' failed."
+}
+
 function Assert-ProvidersRegistered {
     param([Parameter(Mandatory)][string[]]$Namespaces)
 
@@ -699,7 +751,7 @@ try {
     # ---------------------------------------------------------------------
     # Deploy hosted agent, assign RBAC, redeploy with checks enabled
     # ---------------------------------------------------------------------
-    Invoke-Checked { azd deploy --environment $EnvironmentName --no-prompt } `
+    Invoke-Checked { azd deploy maf-poc-agent --environment $EnvironmentName --no-prompt } `
         "Bootstrap hosted-agent deployment failed."
     Invoke-Checked {
         & "$PSScriptRoot\assign_hosted_agent_roles.ps1" `
@@ -713,7 +765,7 @@ try {
 
     $deployed = $false
     for ($attempt = 1; $attempt -le $RbacRetryCount -and -not $deployed; $attempt++) {
-        azd deploy --environment $EnvironmentName --no-prompt
+        azd deploy maf-poc-agent --environment $EnvironmentName --no-prompt
         if ($LASTEXITCODE -eq 0) {
             $deployed = $true
             break
@@ -726,6 +778,10 @@ try {
     if (-not $deployed) {
         throw "Hosted-agent deployment failed after $RbacRetryCount RBAC propagation retries."
     }
+
+    Publish-IntakeApi `
+        -EnvironmentName $EnvironmentName `
+        -RepositoryRoot $repoRoot
 
     Invoke-Checked {
         & "$PSScriptRoot\setup_intake_search.ps1" `

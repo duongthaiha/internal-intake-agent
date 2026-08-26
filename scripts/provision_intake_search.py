@@ -202,7 +202,8 @@ def build_data_source(config: IntakeSearchConfig) -> dict[str, object]:
             "query": (
                 "SELECT c.id, c.tenantId, c.createdBy, c.status, "
                 "c.updatedAt, c.searchTitle, c.searchText, c._ts "
-                "FROM c WHERE IS_DEFINED(c.searchText) "
+                "FROM c WHERE c._ts > @HighWaterMark "
+                "AND IS_DEFINED(c.searchText) "
                 "AND NOT IS_NULL(c.searchText)"
             ),
         },
@@ -313,7 +314,7 @@ class SearchRestClient:
             json=payload,
         )
         self._raise_for_status(response, f"create or update {collection}/{name}")
-        return response.json()
+        return response.json() if response.content else {}
 
     def get(self, collection: str, name: str) -> dict[str, object]:
         response = self._client.get(

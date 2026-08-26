@@ -304,11 +304,16 @@ generated Search data source, skillset, index, and indexer. Toolbox creation and
 hosted-agent cutover to the Foundry IQ knowledge base are intentionally deferred;
 the existing hosted-agent retrieval path remains unchanged in this phase.
 
-The intake image is built locally because the ACR data plane is network
-restricted. During deployment the workflow applies the same client CIDR to ACR, pushes the
-image, and leaves the registry private endpoint enabled. Run the workflow from
-that allowlisted range or from a host with private VNet connectivity; it never
-enables unrestricted registry access.
+The intake image is built by the identity-backed `intake-api-build` ACR Task and
+then deployed with `azd deploy intake-api --from-package <image>`. The named task
+is required because the `azd` QuickRun remote-build path does not use the
+system-assigned task identity required by the ACR network-bypass policy. The
+registry explicitly enables authenticated ACR Tasks network bypass, keeps
+`defaultAction=Deny`, retains its private endpoint, and exposes its public data
+plane only to the configured developer CIDR. Do not allowlist an observed shared
+build-worker IP: shared-pool egress can change, and deployment validation rejects
+any IP rule beyond the approved developer CIDR. Unrestricted public registry
+access is never enabled.
 
 The separate serverless Cosmos account, Container Apps environment, running
 replicas, and APIM Developer instance add Azure cost independently of the hosted
