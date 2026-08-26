@@ -15,6 +15,7 @@ from intake_api.repository import (
     RecordPage,
     RepositoryUnavailableError,
 )
+from intake_api.search_projection import build_search_projection
 from intake_api.validation import SCHEMA_VERSION, validate_intake
 
 
@@ -66,6 +67,7 @@ class IntakeService:
             if key_hash is not None
             else str(uuid4())
         )
+        search_title, search_text = build_search_projection(intake)
         record = IntakeRecord(
             id=record_id,
             tenantId=principal.tenant_id,
@@ -77,6 +79,8 @@ class IntakeService:
             intake=intake,
             idempotencyKeyHash=key_hash,
             requestFingerprint=request_fingerprint,
+            searchTitle=search_title,
+            searchText=search_text,
         )
         try:
             return await self._repository.create(record)
@@ -137,8 +141,14 @@ class IntakeService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Submitted intake requests cannot be changed.",
             )
+        search_title, search_text = build_search_projection(intake)
         updated = current.model_copy(
-            update={"intake": intake, "updated_at": datetime.now(UTC)}
+            update={
+                "intake": intake,
+                "updated_at": datetime.now(UTC),
+                "search_title": search_title,
+                "search_text": search_text,
+            }
         )
         return await self._repository.replace(updated, etag)
 

@@ -573,6 +573,12 @@ if (
     throw "The hosted response was not grounded with '$modelDeployment' and '$ExpectedSource'."
 }
 
+& "$PSScriptRoot\validate_intake_search.ps1" `
+    -EnvironmentName $EnvironmentName
+if ($LASTEXITCODE -ne 0) {
+    throw "Intake Cosmos to Azure AI Search validation failed."
+}
+
 if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
     & "$PSScriptRoot\validate_teams_publication.ps1" `
         -EnvironmentName $EnvironmentName `
@@ -588,6 +594,7 @@ Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($all
 Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
 Write-Output "Intake API: public ACA ingress restricted to APIM, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
+Write-Output "Intake Search: managed-identity Cosmos indexer, integrated vectorization, scheduled indexing, private link, and container-scoped reader role verified."
 Write-Output "Intake MCP: public APIM Developer gateway, Entra policy, and five REST-backed tools verified at $intakeMcpServerUrl."
 if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
     Write-Output "Teams: existing Bot Service, Teams channel, Activity endpoint, Responses endpoint, Entra, and BotServiceTenant configuration verified. Network reachability remains externally managed."

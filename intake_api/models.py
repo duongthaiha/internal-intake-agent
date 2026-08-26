@@ -37,6 +37,8 @@ class IntakeRecord(BaseModel):
         default=None,
         alias="requestFingerprint",
     )
+    search_title: str | None = Field(default=None, alias="searchTitle")
+    search_text: str | None = Field(default=None, alias="searchText")
     etag: str | None = Field(default=None, exclude=True)
 
 

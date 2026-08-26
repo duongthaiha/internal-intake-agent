@@ -727,6 +727,11 @@ try {
         throw "Hosted-agent deployment failed after $RbacRetryCount RBAC propagation retries."
     }
 
+    Invoke-Checked {
+        & "$PSScriptRoot\setup_intake_search.ps1" `
+            -EnvironmentName $EnvironmentName
+    } "Intake Cosmos to Azure AI Search setup failed."
+
     if (-not [string]::IsNullOrWhiteSpace($TeamsBotServiceResourceId)) {
         Invoke-Checked {
             & "$PSScriptRoot\publish_teams.ps1" `

@@ -137,6 +137,15 @@
     "intakeCosmosContainerName": {
       "value": "${INTAKE_COSMOS_CONTAINER_NAME=intake-requests}"
     },
+    "intakeSearchIndexName": {
+      "value": "${INTAKE_SEARCH_INDEX_NAME=intake-requests}"
+    },
+    "intakeSearchIndexerInterval": {
+      "value": "${INTAKE_SEARCH_INDEXER_INTERVAL=PT15M}"
+    },
+    "manageIntakeSearchPrivateLink": {
+      "value": "${AZURE_MANAGE_INTAKE_SEARCH_PRIVATE_LINK=true}"
+    },
     "intakeEntraTenantId": {
       "value": "${INTAKE_ENTRA_TENANT_ID}"
     },

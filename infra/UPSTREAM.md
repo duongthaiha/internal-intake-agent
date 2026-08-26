@@ -80,7 +80,14 @@ Foundry samples repository:
    endpoint, private DNS integration, TLS minimum, local-authentication posture,
    SQL database, and SQL container remain unchanged.
 
-8. **`infra/modules-local/admin-access.bicep`** (new, not part of upstream)
+8. **`infra/modules-local/intake-search-cosmos-role.bicep`** and
+   **`intake-search-private-link.bicep`** grant the Azure AI Search managed
+   identity container-scoped read access to the dedicated intake Cosmos DB and
+   create the Search shared private link used by the Cosmos indexer. Search
+   index, data source, skillset, vectorizer, and indexer objects are provisioned
+   through `scripts/setup_intake_search.ps1`.
+
+9. **`infra/modules-local/admin-access.bicep`** (new, not part of upstream)
    adds private admin access: an `admin-subnet` and the fixed-name
    `AzureBastionSubnet` added to the upstream-created VNet via the same
    `Microsoft.Network/virtualNetworks/subnets` sub-resource technique

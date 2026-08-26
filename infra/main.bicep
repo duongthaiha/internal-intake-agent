@@ -331,6 +331,21 @@ param intakeCosmosDatabaseName string = 'intake'
 @description('Name of the dedicated intake Cosmos DB SQL container.')
 param intakeCosmosContainerName string = 'intake-requests'
 
+@description('Azure AI Search index populated from the dedicated intake Cosmos DB container.')
+param intakeSearchIndexName string = 'intake-requests'
+
+@description('ISO 8601 interval used by the scheduled intake Cosmos DB indexer.')
+param intakeSearchIndexerInterval string = 'PT15M'
+
+@description('Whether to create or update the Azure AI Search shared private link to the intake Cosmos DB account.')
+param manageIntakeSearchPrivateLink bool = true
+
+var intakeSearchConfigurationSuffix = substring(
+  uniqueString(intakeSearchIndexName, intakeSearchIndexerInterval),
+  0,
+  6
+)
+
 @description('Microsoft Entra tenant accepted by the intake API.')
 param intakeEntraTenantId string = tenant().tenantId
 
@@ -841,6 +856,29 @@ module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
     cosmosPrivateDnsZoneId: cosmosPrivateDnsZoneId
     allowedClientIpCidr: allowedClientIpCidr
     resourceTags: securityControlTags
+  }
+  dependsOn: [
+    privateEndpointAndDNS
+  ]
+}
+
+module intakeSearchCosmosRole 'modules-local/intake-search-cosmos-role.bicep' = {
+  name: 'intake-search-cosmos-role-${uniqueSuffix}-${intakeSearchConfigurationSuffix}'
+  params: {
+    accountName: intakeCosmos.outputs.accountName
+    databaseName: intakeCosmos.outputs.databaseName
+    containerName: intakeCosmos.outputs.containerName
+    searchPrincipalId: aiDependencies.outputs.aiSearchPrincipalId
+  }
+}
+
+module intakeSearchPrivateLink 'modules-local/intake-search-private-link.bicep' = if (manageIntakeSearchPrivateLink) {
+  name: 'intake-search-private-link-${uniqueSuffix}-${intakeSearchConfigurationSuffix}'
+  scope: resourceGroup(aiSearchServiceSubscriptionId, aiSearchServiceResourceGroupName)
+  params: {
+    searchServiceName: aiDependencies.outputs.aiSearchName
+    intakeCosmosAccountId: intakeCosmos.outputs.accountId
+    suffix: uniqueSuffix
   }
   dependsOn: [
     privateEndpointAndDNS

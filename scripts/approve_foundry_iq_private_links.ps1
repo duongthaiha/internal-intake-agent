@@ -241,6 +241,17 @@ function Get-SharedPrivateLinkName {
 $searchServiceResourceId = Get-AzdValue "AZURE_SEARCH_SERVICE_RESOURCE_ID"
 $storageId = Get-AzdValue "FOUNDRY_IQ_STORAGE_ACCOUNT_ID"
 $foundryAccountId = Get-AzdValue "AZURE_AI_ACCOUNT_RESOURCE_ID"
+$resourceGroup = Get-AzdValue "AZURE_RESOURCE_GROUP"
+$intakeCosmosAccountName = Get-AzdValue "INTAKE_COSMOS_ACCOUNT_NAME"
+$intakeCosmosAccountId = az cosmosdb show `
+    --name $intakeCosmosAccountName `
+    --resource-group $resourceGroup `
+    --query id `
+    --output tsv
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($intakeCosmosAccountId)) {
+    throw "Unable to resolve intake Cosmos DB resource ID."
+}
+$intakeCosmosAccountId = $intakeCosmosAccountId.Trim()
 $blobLinkName = Get-SharedPrivateLinkName `
     -SearchServiceResourceId $searchServiceResourceId `
     -TargetResourceId $storageId `
@@ -272,4 +283,15 @@ Approve-SearchConnection `
     -ConnectionGroupId "account" `
     -RequestMessage "Approve private model access for Foundry IQ ingestion and retrieval."
 
-Write-Output "Approved Foundry IQ outbound private endpoint connections."
+$intakeCosmosLinkName = Get-SharedPrivateLinkName `
+    -SearchServiceResourceId $searchServiceResourceId `
+    -TargetResourceId $intakeCosmosAccountId `
+    -GroupId "Sql"
+Approve-SearchConnection `
+    -TargetResourceId $intakeCosmosAccountId `
+    -SearchServiceResourceId $searchServiceResourceId `
+    -SharedPrivateLinkName $intakeCosmosLinkName `
+    -ConnectionGroupId "Sql" `
+    -RequestMessage "Approve private Cosmos DB access for intake search indexing."
+
+Write-Output "Approved Search outbound private endpoint connections."

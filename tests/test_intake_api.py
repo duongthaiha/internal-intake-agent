@@ -173,6 +173,19 @@ class IntakeApiTests(unittest.TestCase):
             response.headers["location"],
             f"/v1/intake-requests/{response.json()['id']}",
         )
+        persisted = self.repository.items[
+            ("tenant-a", response.json()["id"])
+        ]
+        self.assertEqual(
+            self.payload["title"],
+            persisted.search_title,
+        )
+        self.assertIn(
+            f"title: {self.payload['title']}",
+            persisted.search_text or "",
+        )
+        self.assertNotIn("searchText", response.json())
+        self.assertNotIn("searchTitle", response.json())
         return response.json(), response.headers["etag"]
 
     def test_create_get_replace_and_submit(self) -> None:
@@ -197,6 +210,15 @@ class IntakeApiTests(unittest.TestCase):
         self.assertEqual(200, replaced.status_code, replaced.text)
         self.assertEqual(
             "Updated innovation request", replaced.json()["intake"]["title"]
+        )
+        persisted = self.repository.items[("tenant-a", request_id)]
+        self.assertEqual(
+            "Updated innovation request",
+            persisted.search_title,
+        )
+        self.assertIn(
+            "title: Updated innovation request",
+            persisted.search_text or "",
         )
 
         submitted = self.client.post(

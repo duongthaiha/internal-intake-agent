@@ -27,6 +27,8 @@ def record_item() -> dict[str, Any]:
         "updatedAt": now,
         "submittedAt": None,
         "intake": {"title": "A test request"},
+        "searchTitle": "A test request",
+        "searchText": "title: A test request",
         "_etag": '"v1"',
     }
 
@@ -123,6 +125,7 @@ class CosmosRepositoryTests(unittest.IsolatedAsyncioTestCase):
         result = await repository.get("tenant-a", "request-a")
         self.assertEqual(["tenant-a", "request-a"], container.read_partition_key)
         self.assertEqual('"v1"', result.etag)
+        self.assertEqual("title: A test request", result.search_text)
 
     async def test_list_query_targets_tenant_and_owner_prefix(self) -> None:
         container = FakeContainer()

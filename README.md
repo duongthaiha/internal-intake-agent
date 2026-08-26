@@ -135,6 +135,43 @@ is intentionally disabled because the correct retention period is an
 organisation policy decision; the `retentionRequirements` intake field records
 context but does not delete data automatically.
 
+### Intake Cosmos vector indexing
+
+Azure AI Search indexes the dedicated `intake/intake-requests` container through
+a scheduled Cosmos DB indexer. The intake API persists `searchTitle` and a
+deterministic `searchText` projection alongside each validated record; these
+internal fields are not returned by the API. Azure AI Search uses the existing
+`foundry-iq-embedding` deployment (`text-embedding-3-large`, 3072 dimensions)
+to generate `searchVector` in a separate `intake-requests` index. The index also
+retains filterable `tenantId`, `createdBy`, and `status` fields for a later
+security-trimmed query surface.
+
+The Search system-assigned managed identity receives Cosmos DB Built-in Data
+Reader on only the intake container. Search reaches Cosmos through a shared
+private link and reuses the existing Search-to-Foundry private link for
+embedding calls. No Cosmos key, Search admin key, or model key is used.
+
+The indexer runs every 15 minutes by default, so indexing is eventually
+consistent and never participates in the API write transaction. The BYO
+deployment workflow approves private links, backfills existing records,
+provisions the index pipeline, runs the indexer, and validates the result.
+Repeat the data-plane setup from a host with private network access with:
+
+```powershell
+.\scripts\setup_intake_search.ps1 -EnvironmentName maf-poc-byo
+```
+
+For individual troubleshooting steps:
+
+```powershell
+python -m scripts.backfill_intake_search
+python -m scripts.provision_intake_search --run-indexer
+.\scripts\validate_intake_search.ps1 -EnvironmentName maf-poc-byo
+```
+
+The backfill uses Cosmos ETags and stops on concurrent changes. Ingestion
+consumes Cosmos reads, Search capacity, and embedding-model tokens.
+
 To run the API locally, use a host with private connectivity to the deployed
 intake Cosmos private endpoint, sign in with an identity that has the Cosmos DB
 data role, populate the `INTAKE_*` settings shown in `.env.example`, and run.
@@ -430,9 +467,16 @@ AZURE_COSMOS_DATABASE_NAME=agent-framework
 AZURE_COSMOS_CONTAINER_NAME=chat-history
 AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
 AZURE_SEARCH_INDEX_NAME=maf-poc-knowledge
+FOUNDRY_IQ_OPENAI_ENDPOINT=https://<foundry-account>.openai.azure.com/
+FOUNDRY_IQ_EMBEDDING_DEPLOYMENT_NAME=foundry-iq-embedding
+FOUNDRY_IQ_EMBEDDING_MODEL_NAME=text-embedding-3-large
 INTAKE_COSMOS_ENDPOINT=https://<intake-cosmos-account>.documents.azure.com:443/
+INTAKE_COSMOS_ACCOUNT_RESOURCE_ID=/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.DocumentDB/databaseAccounts/<intake-cosmos-account>
 INTAKE_COSMOS_DATABASE_NAME=intake
 INTAKE_COSMOS_CONTAINER_NAME=intake-requests
+INTAKE_SEARCH_INDEX_NAME=intake-requests
+INTAKE_SEARCH_INDEXER_INTERVAL=PT15M
+INTAKE_SEARCH_EMBEDDING_DIMENSIONS=3072
 INTAKE_ENTRA_TENANT_ID=<tenant-guid>
 INTAKE_ENTRA_AUDIENCE=api://<intake-api-application-id>
 INTAKE_ENTRA_ISSUER=https://login.microsoftonline.com/<tenant-guid>/v2.0
@@ -460,6 +504,15 @@ non-secret deployment configuration. `INTAKE_ENTRA_ISSUER` defaults to the
 tenant-specific v2 issuer, role/scope names default to the values above, and
 `INTAKE_JWKS_CACHE_SECONDS` defaults to `3600`. Do not use a client secret or
 Cosmos key; local and deployed access use Azure identity.
+
+`INTAKE_SEARCH_INDEX_NAME` and `INTAKE_SEARCH_INDEXER_INTERVAL` are
+non-sensitive provisioning settings and default to `intake-requests` and
+`PT15M`. `INTAKE_SEARCH_EMBEDDING_DIMENSIONS` defaults to `3072` and must match
+the embedding model. `INTAKE_COSMOS_ACCOUNT_RESOURCE_ID` is required only when
+running `scripts.provision_intake_search` directly; the PowerShell setup
+workflow resolves it from Azure. `AZURE_MANAGE_INTAKE_SEARCH_PRIVATE_LINK`
+defaults to `true`; set it to `false` only to preserve a manually managed
+Search-to-Cosmos shared private link during recovery.
 
 `INTAKE_API_MIN_REPLICAS` and `INTAKE_API_MAX_REPLICAS` are non-sensitive
 deployment-only scale limits and default to `1` and `5`.
