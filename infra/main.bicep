@@ -265,6 +265,15 @@ param projectCapHost string = 'caphostproj'
 @description('One client IPv4 CIDR allowed through selected-network rules on template-created data services. Private endpoints remain the primary path and network ACLs stay deny-by-default.')
 param allowedClientIpCidr string = '85.210.10.0/24'
 
+var cosmosAzureServiceIps = [
+  // Cosmos interprets 0.0.0.0 as connections from public Azure datacenters.
+  '0.0.0.0'
+  '4.210.172.107'
+  '13.88.56.148'
+  '13.91.105.215'
+  '40.91.218.243'
+]
+
 @description('Optional full ARM resource ID of the existing Azure Bot Service used to publish the hosted agent to Teams. The template only references this resource and never creates it.')
 param existingTeamsBotServiceResourceId string = ''
 
@@ -501,6 +510,7 @@ module aiDependencies 'modules-network-secured/standard-dependent-resources.bice
     cosmosDBResourceId: azureCosmosDBAccountResourceId
     cosmosDBExists: validateExistingResources.outputs.cosmosDBExists
     allowedClientIpCidr: allowedClientIpCidr
+    cosmosAzureServiceIps: cosmosAzureServiceIps
     resourceTags: securityControlTags
   }
 }
@@ -855,6 +865,7 @@ module intakeCosmos 'modules-local/intake-cosmos.bicep' = {
     privateEndpointSubnetId: vnet.outputs.peSubnetId
     cosmosPrivateDnsZoneId: cosmosPrivateDnsZoneId
     allowedClientIpCidr: allowedClientIpCidr
+    cosmosAzureServiceIps: cosmosAzureServiceIps
     resourceTags: securityControlTags
   }
   dependsOn: [

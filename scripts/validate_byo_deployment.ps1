@@ -92,6 +92,30 @@ function Assert-SingleIpRule {
     }
 }
 
+function Assert-IpRuleSet {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$Rules,
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$ExpectedValues,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    $actual = @($Rules | ForEach-Object { [string]$_ } | Sort-Object -Unique)
+    $expected = @($ExpectedValues | ForEach-Object { [string]$_ } | Sort-Object -Unique)
+    if (
+        $actual.Count -ne $expected.Count -or
+        (Compare-Object -ReferenceObject $expected -DifferenceObject $actual)
+    ) {
+        throw (
+            "$DisplayName must contain exactly these IP rules: $($expected -join ', '); " +
+            "found: $($actual -join ', ')."
+        )
+    }
+}
+
 $resourceGroup = Get-AzdValue "AZURE_RESOURCE_GROUP"
 $location = Get-AzdValue "AZURE_LOCATION"
 $foundryAccount = Get-AzdValue "AZURE_AI_ACCOUNT_NAME"
@@ -108,6 +132,14 @@ $vnetName = Get-AzdValue "AZURE_VIRTUAL_NETWORK_NAME"
 $agentSubnetId = Get-AzdValue "AZURE_AGENT_SUBNET_ID"
 $allowedClientIpCidr = Get-AzdValue "AZURE_ALLOWED_CLIENT_IP_CIDR"
 $allowedClientIp = $allowedClientIpCidr -replace '/32$', ''
+$cosmosAzureServiceIps = @(
+    "0.0.0.0",
+    "4.210.172.107",
+    "13.88.56.148",
+    "13.91.105.215",
+    "40.91.218.243"
+)
+$expectedCosmosIpRules = @($allowedClientIpCidr) + $cosmosAzureServiceIps
 $acrName = Get-AzdValueOrDefault "AZURE_CONTAINER_REGISTRY_NAME"
 $acrDeveloperIpCidr = Get-AzdValueOrDefault "AZURE_ACR_DEVELOPER_IP_CIDR"
 $intakeCosmosAccount = Get-AzdValue "INTAKE_COSMOS_ACCOUNT_NAME"
@@ -199,7 +231,7 @@ if (-not $cosmosAccountIsExisting) {
         throw "Cosmos DB '$cosmosAccount' must use selected-network public access."
     }
     $cosmosIpRules = @($cosmos.ipRules | ForEach-Object { $_.ipAddressOrRange })
-    Assert-SingleIpRule -Rules $cosmosIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Cosmos DB '$cosmosAccount'"
+    Assert-IpRuleSet -Rules $cosmosIpRules -ExpectedValues $expectedCosmosIpRules -DisplayName "Cosmos DB '$cosmosAccount'"
 }
 
 $intakeCosmos = az cosmosdb show --name $intakeCosmosAccount --resource-group $resourceGroup --output json | ConvertFrom-Json
@@ -211,7 +243,7 @@ if ($intakeCosmos.publicNetworkAccess -ne "Enabled" -or -not $intakeCosmos.disab
     throw "Intake Cosmos DB '$intakeCosmosAccount' must use selected-network public access with local authentication disabled."
 }
 $intakeCosmosIpRules = @($intakeCosmos.ipRules | ForEach-Object { $_.ipAddressOrRange })
-Assert-SingleIpRule -Rules $intakeCosmosIpRules -ExpectedValue $allowedClientIpCidr -DisplayName "Intake Cosmos DB '$intakeCosmosAccount'"
+Assert-IpRuleSet -Rules $intakeCosmosIpRules -ExpectedValues $expectedCosmosIpRules -DisplayName "Intake Cosmos DB '$intakeCosmosAccount'"
 $intakeContainer = az cosmosdb sql container show `
     --account-name $intakeCosmosAccount `
     --database-name $intakeCosmosDatabase `
@@ -603,7 +635,7 @@ if (-not [string]::IsNullOrWhiteSpace($teamsBotServiceResourceId)) {
 
 Write-Output "BYO deployment validation passed."
 Write-Output "Foundry account: Enabled + Deny default + one CIDR allowlist ($allowedClientIpCidr); network injection scenario 'agent' with useMicrosoftManagedNetwork=false on the expected agent subnet; agent subnet delegated to Microsoft.App/environments."
-Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry with authenticated ACR Tasks bypass' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
+Write-Output "SecurityControl=Ignore and selected-network ACLs verified for template-created Foundry, Cosmos DB with public Azure datacenter and portal middleware IP rules, Azure AI Search, Storage$(if ($acrName) { ', and Container Registry with authenticated ACR Tasks bypass' }); all private endpoints Approved; all private DNS zone VNet links Succeeded."
 Write-Output "Successful agent startup and grounded invoke also verify Search indexing and the Cosmos write/read/delete connectivity check."
 Write-Output "Intake API: public ACA ingress restricted to APIM, probes, dedicated subnet, managed identity, separate private Cosmos account, container-scoped data role, and partitioning verified."
 Write-Output "Intake Search: managed-identity Cosmos indexer, integrated vectorization, scheduled indexing, private link, and container-scoped reader role verified."

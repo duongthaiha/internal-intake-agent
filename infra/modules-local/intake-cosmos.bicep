@@ -19,8 +19,15 @@ param cosmosPrivateDnsZoneId string
 @description('Client IPv4 CIDR allowed through the account selected-network rule.')
 param allowedClientIpCidr string
 
+@description('Azure datacenter and portal middleware IPv4 addresses allowed through the account selected-network rules.')
+param cosmosAzureServiceIps array
+
 @description('Tags applied to the Cosmos DB account.')
 param resourceTags object
+
+var cosmosAzureServiceIpRules = [for ip in cosmosAzureServiceIps: {
+  ipAddressOrRange: ip
+}]
 
 resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   name: accountName
@@ -46,11 +53,14 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
     ]
     disableLocalAuth: true
     publicNetworkAccess: 'Enabled'
-    ipRules: [
-      {
-        ipAddressOrRange: allowedClientIpCidr
-      }
-    ]
+    ipRules: concat(
+      [
+        {
+          ipAddressOrRange: allowedClientIpCidr
+        }
+      ],
+      cosmosAzureServiceIpRules
+    )
     minimalTlsVersion: 'Tls12'
   }
 }

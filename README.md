@@ -126,7 +126,9 @@ the GUID application ID in `aud`.
 
 The deployed service uses its managed identity to access a dedicated Cosmos DB
 account. The account disables local authentication and permits public access
-only through the configured narrow CIDR, alongside its private endpoint. Its
+only through the configured narrow CIDR and the Azure portal middleware IPs,
+plus Cosmos's `0.0.0.0` firewall rule for connections from public Azure
+datacenters, alongside its private endpoint. Its
 `intake/intake-requests` container uses the hierarchical partition key
 `/tenantId`, `/id`; API updates use Cosmos `_etag` optimistic concurrency. The
 account is separate from the Foundry capability-host and chat-history Cosmos
@@ -255,7 +257,10 @@ network-secured template, adapted for this workload. It creates
 The agent subnet permits public outbound traffic. Foundry, both Cosmos DB
 accounts, Azure AI Search, Storage, and ACR retain their private endpoints and
 also enable public access through selected-network rules restricted to
-`85.210.10.0/24`. ACL defaults remain deny. The Foundry account retains
+`85.210.10.0/24`. Both Cosmos DB accounts additionally allow the Azure portal
+middleware IPs `4.210.172.107`, `13.88.56.148`, `13.91.105.215`, and
+`40.91.218.243`, plus the special `0.0.0.0` rule that accepts connections from
+public Azure datacenters. ACL defaults remain deny. The Foundry account retains
 key-based local authentication; both Cosmos DB accounts keep local
 authentication disabled, and Storage keeps shared-key access disabled. Each
 template-created service carries the `SecurityControl=Ignore` tag. Externally

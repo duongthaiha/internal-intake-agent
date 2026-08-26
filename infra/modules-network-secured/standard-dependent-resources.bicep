@@ -32,10 +32,16 @@ param cosmosDBExists bool
 @description('Client IPv4 CIDR allowed through selected-network rules on template-created dependencies.')
 param allowedClientIpCidr string
 
+@description('Azure datacenter and portal middleware IPv4 addresses allowed to reach template-created Cosmos DB accounts.')
+param cosmosAzureServiceIps array
+
 @description('Tags applied to template-created dependency resources.')
 param resourceTags object
 
 var cosmosParts = split(cosmosDBResourceId, '/')
+var cosmosAzureServiceIpRules = [for ip in cosmosAzureServiceIps: {
+  ipAddressOrRange: ip
+}]
 
 resource existingCosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' existing = if (cosmosDBExists) {
   name: cosmosParts[8]
@@ -59,11 +65,14 @@ resource cosmosDB 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = if(!cosmo
     enableAutomaticFailover: false
     enableMultipleWriteLocations: false
     publicNetworkAccess: 'Enabled'
-    ipRules: [
-      {
-        ipAddressOrRange: allowedClientIpCidr
-      }
-    ]
+    ipRules: concat(
+      [
+        {
+          ipAddressOrRange: allowedClientIpCidr
+        }
+      ],
+      cosmosAzureServiceIpRules
+    )
     enableFreeTier: false
     locations: [
       {
