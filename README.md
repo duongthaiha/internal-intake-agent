@@ -35,6 +35,10 @@ has no RAG provider. Both load
 `agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
 inside either implementation.
 
+The testable behavior and lifecycle expected from both implementations are
+documented in
+[`docs/intake-agent-functional-requirements.md`](docs/intake-agent-functional-requirements.md).
+
 ## Intake request contract
 
 [`schemas/intake-request.schema.json`](schemas/intake-request.schema.json)
