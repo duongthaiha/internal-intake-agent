@@ -4,3 +4,7 @@ My name is Ha Duong, haudong@microsoft.com. Call the agent LitterHelper, The age
 
 Currently it is quite time consuming to do literature review. This can help save time
 
+
+
+
+I have another idea. An agent call Student Helper. This help answer the question for Student. Find lecture location, timetable, bus timeable. This can help improve student experience

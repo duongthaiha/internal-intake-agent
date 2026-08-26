@@ -12,6 +12,21 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' exis
 }
 
 // search roles
+resource searchIndexDataReaderRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  name: '1407120a-92aa-4202-b7e9-c0e197c71c8f'
+  scope: resourceGroup()
+}
+
+resource searchIndexDataReaderAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: searchService
+  name: guid(projectPrincipalId, searchIndexDataReaderRole.id, searchService.id)
+  properties: {
+    principalId: projectPrincipalId
+    roleDefinitionId: searchIndexDataReaderRole.id
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource searchIndexDataContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   name: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
   scope: resourceGroup()
