@@ -10,3 +10,4 @@ __pycache__/
 .foundry/agent-metadata.yaml
 appPackage.zip
 .appPackage.zip.azd-generated
+docs/~$prompt-vs-hosted-agent-slides.pptx
