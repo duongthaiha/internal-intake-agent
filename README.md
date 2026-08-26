@@ -1003,8 +1003,9 @@ with function tools can additionally declare expected calls:
 ```
 
 Tool-call evaluators pass as not applicable when a case has no
-`expected_tool_calls`. RAG in this POC is a context provider rather than a
-function tool, so the starter RAG cases do not declare tool calls.
+`expected_tool_calls`. The starter local cases remain RAG-focused. Deployed MCP
+behavior is evaluated separately because the hosted and prompt agents require
+Foundry approval before each remote tool execution.
 
 ### Foundry cloud evaluation
 
@@ -1017,7 +1018,7 @@ version and scores responses with these built-in cloud evaluators:
 - `intent_resolution`
 - `indirect_attack`
 
-It also registers `maf_poc_expected_behavior`, a prompt-based evaluator that
+It also registers `maf_poc_expected_behavior_json`, a prompt-based evaluator that
 scores each response against the row's reviewed `expected_behavior`. The custom
 evaluator treats the query, response, and rubric as untrusted data.
 
@@ -1059,6 +1060,65 @@ exact hosted-agent version, waits for completion, and saves per-item results
 under `.foundry/results/`. `--inline-data` embeds the reviewed rows in the
 Foundry request, avoiding direct access to the private Storage data plane. A
 VNet-connected runner can omit that flag to register an immutable dataset.
+
+#### Approval-gated MCP tool evaluation
+
+`evals/shared/intake_tool_calls.jsonl` is a shared pre-approval regression
+dataset for both agent variants. The runner derives the five flattened tool
+definitions required by Foundry evaluators from
+`openapi/intake-api.openapi.json` using API Management's projected request-body
+naming, so evaluator schemas stay aligned with the MCP tools. The suite scores the structured agent output with
+`maf_poc_preapproval_tool_call`.
+
+The deterministic pre-approval evaluator inspects `sample.output_items`, checks
+the approved MCP operation and grounded arguments, permits only reviewed
+alternative calls, and fails any intake function call that is not paired with
+an MCP approval request. No LLM judge is used for this suite, so the result is
+repeatable and does not depend on a judge model interpreting intermediate
+approval artifacts.
+
+The command creates an agent-target capture run and then a data-only scoring
+run in Foundry. The second run is the authoritative result; both IDs are saved
+to `.foundry/agent-metadata.yaml` with the downloaded score output.
+
+Foundry's built-in Tool Call Accuracy, Tool Selection, and Tool Input Accuracy
+evaluators require a final agent response. Approval-gated runs stop at an
+intermediate `mcp_approval_request`, so those built-ins report `not_applicable`
+and are intentionally not used by this pre-approval suite. Tool Output
+Utilization and Tool Call Success remain deferred until a state-isolated
+post-approval workflow is available.
+
+Run the suite against the hosted agent, whose Foundry Toolbox tool names use
+the `intake_mcp___` prefix:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --suite tools `
+  --tool-name-style hosted `
+  --agent-name $env:AGENT_MAF_POC_AGENT_NAME `
+  --agent-version $env:AGENT_MAF_POC_AGENT_VERSION `
+  --inline-data
+```
+
+Run the same cases against an immutable prompt-agent version:
+
+```powershell
+python -m scripts.evaluate_foundry `
+  --suite tools `
+  --tool-name-style prompt `
+  --agent-name $env:PROMPT_AGENT_NAME `
+  --agent-version "<prompt-agent-version>" `
+  --inline-data
+```
+
+This suite intentionally stops at the approval boundary. It does not approve
+or execute MCP calls, so Tool Output Utilization and Tool Call Success are not
+included. Add those evaluators only with a separate authenticated,
+state-isolated workflow that can approve calls and clean up created test
+records. Foundry agent and tool evaluators are preview capabilities and each
+LLM-judge run can incur model cost. If the OpenAPI contract changes, verify the
+deployed MCP `tools/list` input schemas and increment `--dataset-version`
+before registering the revised immutable dataset.
 
 #### Comprehensive multi-turn evaluation
 
@@ -1103,15 +1163,18 @@ repository's behavioral and retrieval fields for custom and built-in evaluators.
 
 | Run | Included evaluators |
 | --- | --- |
-| Turn | Coherence, Fluency, Similarity, F1, BLEU, GLEU, ROUGE, METEOR, Retrieval, Document Retrieval, Groundedness, Groundedness Pro, Relevance, Response Completeness, Hate and Unfairness, Sexual, Violence, Self-Harm, Protected Materials, Indirect Attack, Ungrounded Attributes, Task Adherence, Task Completion, Intent Resolution, Quality Grader, and `maf_poc_expected_behavior` |
+| Turn | Coherence, Fluency, Similarity, F1, BLEU, GLEU, ROUGE, METEOR, Retrieval, Document Retrieval, Groundedness, Groundedness Pro, Relevance, Response Completeness, Hate and Unfairness, Sexual, Violence, Self-Harm, Protected Materials, Indirect Attack, Ungrounded Attributes, Task Adherence, Task Completion, Intent Resolution, Quality Grader, and `maf_poc_expected_behavior_json` |
 | Conversation | Customer Satisfaction, Task Completion, Coherence, and Groundedness |
 
-Tool Call Accuracy, Tool Selection, Tool Input Accuracy, Tool Output
-Utilization, Tool Call Success, and Task Navigation Efficiency are excluded.
-This agent has no user-defined function tools, and Microsoft documents limited
-evaluator support for Azure AI Search, which this workload uses as a context
-provider rather than a function tool. Prohibited Actions and Sensitive Data
-Leakage are also excluded because their agent-target contracts require tool-call
+The comprehensive transcript suites exclude tool evaluators because their
+reviewed conversations do not contain MCP call artifacts. Tool Call Accuracy,
+Tool Selection, and Tool Input Accuracy run in the dedicated live-agent
+`tools` suite instead. Tool Output Utilization, Tool Call Success, and Task
+Navigation Efficiency remain excluded because the automated suite stops at the
+required approval boundary. Microsoft documents limited tool-evaluator support
+for Azure AI Search, which this workload uses as a context provider rather than
+an MCP function tool. Prohibited Actions and Sensitive Data Leakage are also
+excluded because their agent-target contracts require different tool-call
 artifacts. Code Vulnerability is not applicable to this non-code-generation
 workload. Azure OpenAI graders and generated rubric/custom evaluators are
 configurable extensions rather than fixed built-in signals; the existing

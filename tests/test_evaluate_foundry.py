@@ -3,7 +3,9 @@ import os
 import tempfile
 import unittest
 from argparse import Namespace
+from contextlib import redirect_stderr
 from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -14,24 +16,35 @@ from scripts.evaluate_foundry import (
     BEHAVIOR_EVALUATOR_NAME,
     COMPREHENSIVE_DATASET_PATH,
     DATASET_SHA_TAG,
+    PREAPPROVAL_TOOL_EVALUATOR_NAME,
+    TOOL_DATASET_PATH,
+    TOOL_OPENAPI_PATH,
     EvaluationTarget,
+    build_intake_tool_definitions,
     build_comprehensive_agent_criteria,
     build_comprehensive_conversation_criteria,
     build_comprehensive_turn_criteria,
     build_jsonl_run_data_source,
     build_inline_jsonl_run_data_source,
     build_inline_run_data_source,
+    build_preapproval_tool_evaluator,
     build_run_data_source,
     build_schedule,
     build_testing_criteria,
+    build_tool_data_source_config,
+    build_tool_score_items,
+    build_tool_testing_criteria,
     build_behavior_evaluator,
     dataset_sha256,
     load_comprehensive_dataset,
     load_dataset,
     load_evaluation_target,
+    load_tool_dataset,
     find_or_create_evaluation,
     filter_criteria_for_region,
+    parse_args,
     parse_raw_agent_response,
+    prepare_tool_evaluation,
     register_dataset,
     replay_conversations,
     replay_dataset_version,
@@ -42,6 +55,364 @@ from scripts.evaluate_foundry import (
 
 
 class EvaluateFoundryTests(unittest.TestCase):
+    def test_intake_tool_definitions_cover_prompt_operations(self) -> None:
+        definitions = build_intake_tool_definitions(
+            TOOL_OPENAPI_PATH,
+            tool_name_style="prompt",
+        )
+
+        names = [definition["name"] for definition in definitions]
+        self.assertEqual(
+            names,
+            [
+                "create_intake_request",
+                "get_intake_request",
+                "list_intake_requests",
+                "replace_intake_request",
+                "submit_intake_request",
+            ],
+        )
+        by_name = {
+            definition["name"]: definition
+            for definition in definitions
+        }
+        create_parameters = by_name["create_intake_request"]["parameters"]
+        self.assertIn("IntakeRequest", create_parameters["required"])
+        self.assertEqual(
+            create_parameters["properties"]["IntakeRequest"]["required"],
+            [
+                "title",
+                "problemOpportunity",
+                "proposedIdea",
+                "expectedOutcome",
+                "requester",
+            ],
+        )
+        replace_parameters = by_name["replace_intake_request"]["parameters"]
+        self.assertEqual(
+            replace_parameters["required"],
+            ["request_id", "If-Match", "IntakeRequest"],
+        )
+        submit_parameters = by_name["submit_intake_request"]["parameters"]
+        self.assertEqual(
+            submit_parameters["required"],
+            ["request_id", "If-Match"],
+        )
+        self.assertEqual(
+            submit_parameters["properties"]["body"],
+            {"type": "string", "description": "Request body"},
+        )
+
+    def test_intake_tool_definitions_prefix_hosted_names(self) -> None:
+        definitions = build_intake_tool_definitions(
+            TOOL_OPENAPI_PATH,
+            tool_name_style="hosted",
+        )
+
+        self.assertTrue(
+            all(
+                definition["name"].startswith("intake_mcp___")
+                for definition in definitions
+            )
+        )
+
+    def test_tool_dataset_adds_definitions_to_every_case(self) -> None:
+        items = load_tool_dataset(
+            TOOL_DATASET_PATH,
+            tool_name_style="prompt",
+        )
+
+        self.assertGreaterEqual(len(items), 9)
+        self.assertTrue(all(len(item["tool_definitions"]) == 5 for item in items))
+        self.assertIsNot(
+            items[0]["tool_definitions"],
+            items[1]["tool_definitions"],
+        )
+        self.assertEqual(
+            items[0]["tool_expectation"]["allowed_calls"][0]["name"],
+            "list_intake_requests",
+        )
+
+    def test_tool_criteria_use_structured_agent_output(self) -> None:
+        criteria = build_tool_testing_criteria("model", "1")
+        by_name = {criterion["name"]: criterion for criterion in criteria}
+
+        self.assertEqual(
+            set(by_name),
+            {
+                "preapproval_tool_call",
+            },
+        )
+        tool_criterion = by_name["preapproval_tool_call"]
+        self.assertEqual(
+            tool_criterion["evaluator_name"],
+            PREAPPROVAL_TOOL_EVALUATOR_NAME,
+        )
+        self.assertEqual(tool_criterion["evaluator_version"], "1")
+        self.assertEqual(
+            tool_criterion.get("data_mapping"),
+            None,
+        )
+        self.assertEqual(
+            tool_criterion["initialization_parameters"],
+            {"deployment_name": "model", "pass_threshold": 1},
+        )
+    def test_tool_data_source_requires_tool_definitions(self) -> None:
+        config = build_tool_data_source_config()
+
+        self.assertEqual(
+            config["item_schema"]["required"],
+            [
+                "query",
+                "expected_behavior",
+                "tool_expectation",
+                "tool_definitions",
+            ],
+        )
+
+    def test_preapproval_tool_evaluator_scores_approved_calls(self) -> None:
+        namespace: dict[str, object] = {}
+        evaluator = build_preapproval_tool_evaluator()
+        exec(evaluator.definition.code_text, namespace)
+        grade = namespace["grade"]
+        response = [
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    [
+                        {
+                            "type": "function_call",
+                            "name": "create_intake_request",
+                            "arguments": {
+                                "IntakeRequest": {"title": "Example"},
+                            },
+                        }
+                    ]
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    [
+                        {
+                            "type": "mcp_approval_request",
+                            "name": "create_intake_request",
+                            "arguments": {
+                                "IntakeRequest": {"title": "Example"},
+                                "Idempotency-Key": "generated",
+                            },
+                        }
+                    ]
+                ),
+            },
+        ]
+        expectation = {
+            "minimum_calls": 1,
+            "maximum_calls": 1,
+            "allowed_calls": [
+                {
+                    "name": "create_intake_request",
+                    "arguments": {"IntakeRequest": {"title": "Example"}},
+                    "allowed_extra_arguments": ["Idempotency-Key"],
+                }
+            ],
+        }
+
+        self.assertEqual(
+            grade({"output": response}, {"tool_expectation": expectation}),
+            0.0,
+        )
+        response[0]["content"] = json.dumps(
+            [
+                {
+                    "type": "function_call",
+                    "name": "create_intake_request",
+                    "arguments": {
+                        "IntakeRequest": {"title": "Example"},
+                        "Idempotency-Key": "generated",
+                    },
+                }
+            ]
+        )
+        self.assertEqual(
+            grade({"output": response}, {"tool_expectation": expectation}),
+            1.0,
+        )
+        self.assertEqual(
+            grade(
+                {"output": json.dumps(response)},
+                {"item": {"tool_expectation": json.dumps(expectation)}},
+            ),
+            1.0,
+        )
+
+    def test_preapproval_tool_evaluator_rejects_unapproved_function_call(self) -> None:
+        namespace: dict[str, object] = {}
+        evaluator = build_preapproval_tool_evaluator()
+        exec(evaluator.definition.code_text, namespace)
+        grade = namespace["grade"]
+        response = [
+            {
+                "role": "assistant",
+                "content": json.dumps(
+                    [
+                        {
+                            "type": "function_call",
+                            "name": "submit_intake_request",
+                            "arguments": {},
+                        }
+                    ]
+                ),
+            }
+        ]
+
+        self.assertEqual(
+            grade(
+                {"output": response},
+                {
+                    "tool_expectation": {
+                        "minimum_calls": 0,
+                        "maximum_calls": 0,
+                        "allowed_calls": [],
+                    },
+                },
+            ),
+            0.0,
+        )
+
+    def test_registered_tool_dataset_materializes_definitions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project_client = MagicMock()
+            project_client.datasets.upload_file.return_value = SimpleNamespace(
+                data_uri="azureml://dataset",
+                is_reference=False,
+                connection_name=None,
+            )
+            project_client.datasets.create_or_update.return_value = SimpleNamespace(
+                id="dataset-id",
+                name="tool-dataset",
+                version="1",
+            )
+            project_client.beta.evaluators.get_version.return_value = SimpleNamespace(
+                version="1"
+            )
+            openai_client = MagicMock()
+            openai_client.evals.list.return_value = []
+            openai_client.evals.create.return_value = SimpleNamespace(id="eval-id")
+            args = Namespace(
+                dataset=TOOL_DATASET_PATH,
+                dataset_name="tool-dataset",
+                dataset_version="1",
+                evaluation_name="tool-evaluation",
+                inline_data=False,
+                replay_root=Path(directory),
+                tool_openapi=TOOL_OPENAPI_PATH,
+                tool_name_style="prompt",
+            )
+
+            with patch.dict(os.environ, {"AZURE_LOCATION": "eastus"}, clear=False):
+                _, _, _, items, prepared_path = prepare_tool_evaluation(
+                    project_client,
+                    openai_client,
+                    args,
+                    EvaluationTarget("model", "agent", "1"),
+                )
+
+            registered_path = Path(
+                project_client.datasets.upload_file.call_args.kwargs["file_path"]
+            )
+            self.assertEqual(registered_path, prepared_path)
+            self.assertEqual(
+                project_client.datasets.upload_file.call_args.kwargs["name"],
+                "tool-dataset-prompt",
+            )
+            self.assertTrue(prepared_path.exists())
+            registered_items = [
+                json.loads(line)
+                for line in prepared_path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(registered_items, items)
+            self.assertTrue(all("tool_definitions" in item for item in registered_items))
+
+    def test_tool_score_items_extract_capture_output(self) -> None:
+        output_items = [
+            {
+                "datasource_item": {
+                    "item": {
+                        "query": "List requests",
+                        "tool_expectation": {
+                            "minimum_calls": 1,
+                            "maximum_calls": 1,
+                            "allowed_calls": [],
+                        },
+                    }
+                },
+                "sample": {
+                    "output": [
+                        {
+                            "role": "assistant",
+                            "content": "[]",
+                        }
+                    ]
+                },
+            }
+        ]
+
+        self.assertEqual(
+            build_tool_score_items(output_items),
+            [
+                {
+                    "query": "List requests",
+                    "response": [
+                        {
+                            "role": "assistant",
+                            "content": "[]",
+                        }
+                    ],
+                    "tool_expectation": {
+                        "minimum_calls": 1,
+                        "maximum_calls": 1,
+                        "allowed_calls": [],
+                    },
+                }
+            ],
+        )
+
+    def test_tools_suite_resolves_defaults(self) -> None:
+        with patch(
+            "sys.argv",
+            [
+                "evaluate_foundry.py",
+                "--suite",
+                "tools",
+                "--tool-name-style",
+                "prompt",
+            ],
+        ):
+            args = parse_args()
+
+        self.assertEqual(args.dataset, TOOL_DATASET_PATH)
+        self.assertEqual(args.dataset_name, "maf-poc-intake-tools")
+        self.assertEqual(args.dataset_version, "1")
+        self.assertEqual(args.tool_name_style, "prompt")
+
+    def test_tools_suite_rejects_scheduling(self) -> None:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "evaluate_foundry.py",
+                    "--suite",
+                    "tools",
+                    "--action",
+                    "schedule",
+                ],
+            ),
+            redirect_stderr(StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            parse_args()
+
     def test_analysis_counts_nested_evaluator_errors(self) -> None:
         analysis = analyze_output_items(
             [
@@ -216,6 +587,20 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertEqual(data_source["source"]["type"], "file_content")
         self.assertEqual(data_source["source"]["content"], [{"item": items[0]}])
         self.assertEqual(data_source["target"]["version"], "7")
+
+    def test_inline_agent_data_source_supports_nested_query(self) -> None:
+        target = EvaluationTarget("model", "agent", "7")
+
+        data_source = build_inline_run_data_source(
+            [{"query": "hello"}],
+            target,
+            query_field="item.query",
+        )
+
+        self.assertEqual(
+            data_source["input_messages"]["template"][0]["content"]["text"],
+            "{{item.item.query}}",
+        )
 
     def test_schedule_runs_daily_at_selected_utc_hour(self) -> None:
         target = EvaluationTarget("model", "agent", "7")

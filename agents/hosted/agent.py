@@ -26,17 +26,12 @@ from agents.hosted.identity_diagnostics import IdentityDiagnosticsMiddleware
 from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
 from agents.hosted.rag import FoundryIqContextProvider, build_rag_provider
 from agents.shared.instructions import load_intake_instructions
+from agents.shared.intake_tools import intake_tool_names
 
 
 logger = logging.getLogger(__name__)
 
-INTAKE_TOOLBOX_TOOLS = (
-    "intake_mcp___create_intake_request",
-    "intake_mcp___get_intake_request",
-    "intake_mcp___list_intake_requests",
-    "intake_mcp___replace_intake_request",
-    "intake_mcp___submit_intake_request",
-)
+INTAKE_TOOLBOX_TOOLS = intake_tool_names("hosted")
 
 
 def get_required_setting(name: str) -> str:
