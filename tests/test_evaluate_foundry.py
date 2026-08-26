@@ -53,6 +53,7 @@ from scripts.evaluate_foundry import (
     score_tool_items_locally,
     show_schedule,
     analyze_output_items,
+    upsert_comprehensive_agent_schedule,
 )
 
 
@@ -930,15 +931,16 @@ class EvaluateFoundryTests(unittest.TestCase):
 
         with (
             patch(
-                "scripts.evaluate_foundry.prepare_comprehensive_evaluations",
+                "scripts.foundry_eval.suites.comprehensive."
+                "prepare_comprehensive_evaluations",
                 return_value=(dataset, evaluations, []),
             ),
             patch(
-                "scripts.evaluate_foundry.poll_run",
+                "scripts.foundry_eval.suites.comprehensive.poll_run",
                 return_value=SimpleNamespace(status="completed"),
             ),
-            patch("scripts.evaluate_foundry.update_eval_metadata"),
-            patch("scripts.evaluate_foundry.save_json"),
+            patch("scripts.foundry_eval.suites.comprehensive.update_eval_metadata"),
+            patch("scripts.foundry_eval.suites.comprehensive.save_json"),
             patch("builtins.print"),
         ):
             run_comprehensive_evaluation(
@@ -958,6 +960,59 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertEqual(
             conversation_call.kwargs["extra_body"],
             {"evaluation_level": "conversation"},
+        )
+
+    def test_comprehensive_agent_schedule_uses_prepared_inline_items(self) -> None:
+        # Regression test: upsert_comprehensive_agent_schedule previously
+        # discarded the dataset items returned by
+        # prepare_comprehensive_agent_evaluation and then referenced an
+        # undefined `dataset_items` name when building the inline data
+        # source, raising NameError for --inline-data schedules.
+        project_client = MagicMock()
+        openai_client = MagicMock()
+        dataset = SimpleNamespace(id="dataset-id", name="dataset", version="1")
+        evaluation = SimpleNamespace(id="eval-id")
+        dataset_items = [{"agent_query": "hello", "query": "hello"}]
+        target = EvaluationTarget("model", "agent", "7")
+        args = Namespace(
+            dataset=COMPREHENSIVE_DATASET_PATH,
+            dataset_name="dataset",
+            dataset_version="1",
+            evaluation_name="comprehensive-agent",
+            run_name="comprehensive-agent-run",
+            inline_data=True,
+            schedule_hour_utc=9,
+            schedule_id="maf-poc-daily-comprehensive",
+            schedule_cache_root=Path(tempfile.mkdtemp()),
+        )
+        project_client.beta.schedules.create_or_update.return_value = SimpleNamespace(
+            schedule_id="maf-poc-daily-comprehensive",
+            provisioning_status="succeeded",
+        )
+
+        with (
+            patch(
+                "scripts.foundry_eval.suites.comprehensive."
+                "prepare_comprehensive_agent_evaluation",
+                return_value=(dataset, evaluation, dataset_items),
+            ),
+            patch("scripts.foundry_eval.suites.comprehensive.save_json"),
+            patch("builtins.print"),
+        ):
+            upsert_comprehensive_agent_schedule(
+                project_client,
+                openai_client,
+                args,
+                target,
+            )
+
+        schedule_arg = project_client.beta.schedules.create_or_update.call_args.kwargs[
+            "schedule"
+        ]
+        eval_run = schedule_arg.as_dict()["task"]["evalRun"]
+        self.assertEqual(
+            eval_run["data_source"]["source"]["content"],
+            [{"item": dataset_items[0]}],
         )
 
     def test_parse_raw_agent_response_reads_completed_sse(self) -> None:

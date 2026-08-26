@@ -1072,6 +1072,18 @@ Foundry approval before each remote tool execution.
 
 ### Foundry cloud evaluation
 
+> **Maintainer note:** `scripts/evaluate_foundry.py` is a thin compatibility
+> facade over `scripts/foundry_eval/`, which owns the implementation as a
+> hybrid package: `config.py` (constants/settings), `datasets.py`
+> (loading/validation/registration/schema builders), `evaluators.py` (custom
+> evaluator definitions and testing criteria), `runtime.py` (serialization,
+> polling, result persistence, run data sources, schedules), `replay.py`
+> (hosted-agent invocation and conversation replay), `suites/` (one module per
+> `--suite`: `smoke.py`, `tools.py`, `comprehensive.py`), and `cli.py`
+> (argument parsing and dispatch). Add new datasets, evaluators, or suites in
+> the owning module rather than in the facade; the CLI surface below is
+> unchanged.
+
 The deployed hosted agent uses the reviewed regression cases in
 `evals/foundry_smoke.jsonl`. The evaluation invokes the exact deployed agent
 version and scores responses with these built-in cloud evaluators:
