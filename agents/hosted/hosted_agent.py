@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from agents.hosted.agent import build_agent
 from agents.hosted.logging_config import configure_logging
 from agents.hosted.rag import verify_foundry_iq_access
+from agents.hosted.request_telemetry import (
+    HostedRequestTelemetryMiddleware,
+    configure_hosted_observability,
+)
 from agents.hosted.search_index import initialize_search_index
 
 
@@ -135,7 +139,12 @@ def main() -> None:
     initialize_rag()
     verify_cosmos_access()
     components = build_agent()
-    ResponsesHostServer(components.agent).run()
+    server = ResponsesHostServer(
+        components.agent,
+        configure_observability=configure_hosted_observability,
+    )
+    server.add_middleware(HostedRequestTelemetryMiddleware)
+    server.run()
 
 
 if __name__ == "__main__":

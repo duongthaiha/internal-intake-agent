@@ -32,6 +32,7 @@ from agents.shared.intake_tools import intake_tool_names
 logger = logging.getLogger(__name__)
 
 INTAKE_TOOLBOX_TOOLS = intake_tool_names("hosted")
+DEFAULT_AGENT_NAME = "maf-poc-agent"
 
 
 def get_required_setting(name: str) -> str:
@@ -58,6 +59,19 @@ def get_boolean_setting(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise RuntimeError(f"{name} must be a boolean value.")
+
+
+def get_agent_identity() -> tuple[str, str]:
+    name = (
+        os.getenv("FOUNDRY_AGENT_NAME")
+        or os.getenv("AGENT_MAF_POC_AGENT_NAME")
+        or DEFAULT_AGENT_NAME
+    )
+    version = (
+        os.getenv("FOUNDRY_AGENT_VERSION")
+        or os.getenv("AGENT_MAF_POC_AGENT_VERSION")
+    )
+    return name, f"{name}:{version}" if version else name
 
 
 @dataclass
@@ -117,6 +131,7 @@ def build_agent() -> AgentComponents:
         "IDENTITY_DIAGNOSTICS_ENABLED",
         False,
     )
+    agent_name, agent_id = get_agent_identity()
     logger.info(
         "Building agent with model=%s, history_provider=%s, rag_provider=%s, "
         "toolbox_enabled=%s, identity_diagnostics_enabled=%s",
@@ -144,7 +159,8 @@ def build_agent() -> AgentComponents:
             model=model,
             credential=credential,
         ),
-        name="maf-poc-agent",
+        id=agent_id,
+        name=agent_name,
         description="An Intake agent that helps with internal intake processes.",
         harness_instructions=(
             "Work methodically. For multi-step tasks, plan the work, track "
