@@ -26,6 +26,7 @@ from scripts.evaluate_foundry import (
     build_comprehensive_turn_criteria,
     build_jsonl_run_data_source,
     build_inline_jsonl_run_data_source,
+    build_inline_literal_run_data_source,
     build_inline_run_data_source,
     build_preapproval_tool_evaluator,
     build_run_data_source,
@@ -49,6 +50,7 @@ from scripts.evaluate_foundry import (
     replay_conversations,
     replay_dataset_version,
     run_comprehensive_evaluation,
+    score_tool_items_locally,
     show_schedule,
     analyze_output_items,
 )
@@ -245,6 +247,20 @@ class EvaluateFoundryTests(unittest.TestCase):
             ),
             1.0,
         )
+        self.assertEqual(
+            grade(
+                {},
+                {
+                    "item.response": response,
+                    "item.tool_expectation.minimum_calls": 1,
+                    "item.tool_expectation.maximum_calls": 1,
+                    "item.tool_expectation.allowed_calls": expectation[
+                        "allowed_calls"
+                    ],
+                },
+            ),
+            1.0,
+        )
 
     def test_preapproval_tool_evaluator_rejects_unapproved_function_call(self) -> None:
         namespace: dict[str, object] = {}
@@ -311,7 +327,7 @@ class EvaluateFoundryTests(unittest.TestCase):
             )
 
             with patch.dict(os.environ, {"AZURE_LOCATION": "eastus"}, clear=False):
-                _, _, _, items, prepared_path = prepare_tool_evaluation(
+                _, _, items, prepared_path = prepare_tool_evaluation(
                     project_client,
                     openai_client,
                     args,
@@ -377,6 +393,40 @@ class EvaluateFoundryTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_tool_score_items_are_scored_deterministically(self) -> None:
+        items = [
+            {
+                "query": "List requests",
+                "response": [
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            [
+                                {
+                                    "type": "mcp_approval_request",
+                                    "name": "list_intake_requests",
+                                    "arguments": {"limit": 100},
+                                }
+                            ]
+                        ),
+                    }
+                ],
+                "tool_expectation": {
+                    "minimum_calls": 1,
+                    "maximum_calls": 1,
+                    "allowed_calls": [
+                        {
+                            "name": "list_intake_requests",
+                            "arguments": {},
+                            "allowed_extra_arguments": ["limit"],
+                        }
+                    ],
+                },
+            }
+        ]
+
+        self.assertEqual(score_tool_items_locally(items)[0]["score"], 1.0)
 
     def test_tools_suite_resolves_defaults(self) -> None:
         with patch(
@@ -600,6 +650,19 @@ class EvaluateFoundryTests(unittest.TestCase):
         self.assertEqual(
             data_source["input_messages"]["template"][0]["content"]["text"],
             "{{item.item.query}}",
+        )
+
+    def test_inline_literal_data_source_avoids_template_lookup(self) -> None:
+        target = EvaluationTarget("model", "agent", "7")
+
+        data_source = build_inline_literal_run_data_source(
+            {"query": "hello"},
+            target,
+        )
+
+        self.assertEqual(
+            data_source["input_messages"]["template"][0]["content"]["text"],
+            "hello",
         )
 
     def test_schedule_runs_daily_at_selected_utc_hour(self) -> None:

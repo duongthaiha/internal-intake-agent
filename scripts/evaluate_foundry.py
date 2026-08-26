@@ -43,6 +43,7 @@ DEFAULT_SCHEDULE_CACHE_ROOT = Path(".foundry/schedules")
 DEFAULT_REPLAY_ROOT = Path(".foundry/datasets")
 DEFAULT_METADATA_PATH = Path(".foundry/agent-metadata.yaml")
 DEFAULT_POLL_SECONDS = 15
+DEFAULT_CAPTURE_ATTEMPTS = 2
 DEFAULT_DATASET_NAME = "maf-poc-smoke"
 DEFAULT_DATASET_VERSION = "2"
 DEFAULT_EVALUATION_NAME = "maf-poc-agent-regression"
@@ -68,7 +69,7 @@ COMPREHENSIVE_AGENT_RUN_NAME = "maf-poc-agent-daily-comprehensive"
 COMPREHENSIVE_AGENT_SCHEDULE_ID = "maf-poc-daily-comprehensive"
 BEHAVIOR_EVALUATOR_NAME = "maf_poc_expected_behavior_json"
 PREAPPROVAL_TOOL_EVALUATOR_NAME = "maf_poc_preapproval_tool_call"
-PREAPPROVAL_TOOL_EVALUATOR_VERSION = "5"
+PREAPPROVAL_TOOL_EVALUATOR_VERSION = "6"
 TOOL_CAPTURE_EVALUATOR_NAME = "maf_poc_tool_capture_complete"
 TOOL_CAPTURE_EVALUATOR_VERSION = "2"
 DATASET_SHA_TAG = "source_sha256"
@@ -806,6 +807,9 @@ def _find_value(value, key):
     for mapped in _walk(value):
         if key in mapped:
             return _json_value(mapped[key])
+        for mapped_key, mapped_value in mapped.items():
+            if isinstance(mapped_key, str) and mapped_key.endswith("." + key):
+                return _json_value(mapped_value)
     return None
 
 
@@ -866,6 +870,12 @@ def _is_intake_call(name):
 
 def grade(sample, item) -> float:
     expectation = _find_value(item, "tool_expectation")
+    if not isinstance(expectation, dict):
+        expectation = {
+            "minimum_calls": _find_value(item, "minimum_calls"),
+            "maximum_calls": _find_value(item, "maximum_calls"),
+            "allowed_calls": _find_value(item, "allowed_calls"),
+        }
     response = _find_value(item, "response")
     if response is None:
         sample_mapping = _mapping(sample)
@@ -1676,6 +1686,18 @@ def build_inline_run_data_source(
     return data_source
 
 
+def build_inline_literal_run_data_source(
+    item: dict[str, Any],
+    target: EvaluationTarget,
+) -> dict[str, Any]:
+    query = item.get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise RuntimeError("Inline literal evaluation item has no query")
+    data_source = build_inline_run_data_source([item], target)
+    data_source["input_messages"]["template"][0]["content"]["text"] = query
+    return data_source
+
+
 def build_jsonl_run_data_source(dataset_id: str) -> dict[str, Any]:
     return {
         "type": "jsonl",
@@ -1911,7 +1933,7 @@ def prepare_tool_evaluation(
     openai_client: Any,
     args: argparse.Namespace,
     target: EvaluationTarget,
-) -> tuple[Any, Any, Any, list[dict[str, Any]], Path]:
+) -> tuple[Any, Any, list[dict[str, Any]], Path]:
     dataset_items = load_tool_dataset(
         args.dataset,
         openapi_path=args.tool_openapi,
@@ -1948,24 +1970,7 @@ def prepare_tool_evaluation(
         build_tool_data_source_config(),
         version_definition=True,
     )
-    preapproval_tool_evaluator = ensure_preapproval_tool_evaluator(project_client)
-    score_evaluation = find_or_create_evaluation(
-        openai_client,
-        f"{args.evaluation_name}-{args.tool_name_style}-score",
-        build_tool_testing_criteria(
-            target.model_deployment_name,
-            preapproval_tool_evaluator.version,
-        ),
-        build_tool_score_data_source_config(),
-        version_definition=True,
-    )
-    return (
-        dataset,
-        capture_evaluation,
-        score_evaluation,
-        dataset_items,
-        prepared_dataset_path,
-    )
+    return dataset, capture_evaluation, dataset_items, prepared_dataset_path
 
 
 def build_tool_score_items(output_items: list[Any]) -> list[dict[str, Any]]:
@@ -2000,6 +2005,23 @@ def build_tool_score_items(output_items: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return score_items
+
+
+def score_tool_items_locally(
+    score_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    namespace: dict[str, Any] = {}
+    exec(PREAPPROVAL_TOOL_EVALUATOR_CODE, namespace)
+    grade = namespace["grade"]
+    return [
+        {
+            "query": item["query"],
+            "score": grade({}, item),
+            "tool_expectation": item["tool_expectation"],
+            "response": item["response"],
+        }
+        for item in score_items
+    ]
 
 
 def run_evaluation(
@@ -2086,84 +2108,88 @@ def run_tool_evaluation(
     (
         dataset,
         capture_evaluation,
-        score_evaluation,
         dataset_items,
         prepared_dataset_path,
     ) = prepare_tool_evaluation(project_client, openai_client, args, target)
-    data_source = (
-        build_inline_run_data_source(
-            dataset_items,
-            target,
-            query_field="item.query",
-        )
-        if uses_inline_data(args)
-        else build_run_data_source(dataset.id, target)
-    )
-    capture_run = openai_client.evals.runs.create(
-        eval_id=capture_evaluation.id,
-        name=f"{args.run_name}-capture",
-        data_source=data_source,
-    )
     print(f"Capture evaluation ID: {capture_evaluation.id}")
-    print(f"Capture run ID: {capture_run.id}")
     print(f"Dataset: {dataset.name}:{dataset.version}")
     print(f"Tool name style: {args.tool_name_style}")
-    capture_current = poll_run(
-        openai_client,
-        capture_evaluation.id,
-        capture_run.id,
-        args.poll_seconds,
+    capture_runs: list[Any] = []
+    capture_currents: list[Any] = []
+    capture_output_items: list[Any] = []
+    capture_sources = (
+        [
+            build_inline_literal_run_data_source(item, target)
+            for item in dataset_items
+        ]
+        if uses_inline_data(args)
+        else [build_run_data_source(dataset.id, target)]
     )
-    capture_output_items = list(
-        openai_client.evals.runs.output_items.list(
-            capture_run.id,
-            eval_id=capture_evaluation.id,
-            limit=100,
-            order="asc",
-        )
-    )
-    if capture_current.status != "completed":
-        raise RuntimeError(
-            f"Tool capture evaluation ended with status {capture_current.status}"
-        )
+    for position, capture_source in enumerate(capture_sources, start=1):
+        for attempt in range(1, DEFAULT_CAPTURE_ATTEMPTS + 1):
+            capture_run = openai_client.evals.runs.create(
+                eval_id=capture_evaluation.id,
+                name=(
+                    f"{args.run_name}-capture-{position:02d}"
+                    f"-attempt-{attempt}"
+                ),
+                data_source=capture_source,
+            )
+            capture_runs.append(capture_run)
+            print(
+                f"Capture run ID ({position}/{len(capture_sources)}, "
+                f"attempt {attempt}): {capture_run.id}"
+            )
+            capture_current = poll_run(
+                openai_client,
+                capture_evaluation.id,
+                capture_run.id,
+                args.poll_seconds,
+            )
+            capture_currents.append(capture_current)
+            if capture_current.status == "completed":
+                captured = list(
+                    openai_client.evals.runs.output_items.list(
+                        capture_run.id,
+                        eval_id=capture_evaluation.id,
+                        limit=100,
+                        order="asc",
+                    )
+                )
+                capture_output_items.extend(captured)
+                break
+            if attempt == DEFAULT_CAPTURE_ATTEMPTS:
+                raise RuntimeError(
+                    "Tool capture evaluation ended with status "
+                    f"{capture_current.status} after {attempt} attempts"
+                )
+            print(
+                f"Retrying capture case {position} after status "
+                f"{capture_current.status}."
+            )
 
     score_items = build_tool_score_items(capture_output_items)
-    score_run = openai_client.evals.runs.create(
-        eval_id=score_evaluation.id,
-        name=f"{args.run_name}-score",
-        data_source=build_inline_jsonl_run_data_source(score_items),
-    )
-    print(f"Score evaluation ID: {score_evaluation.id}")
-    print(f"Score run ID: {score_run.id}")
-    score_current = poll_run(
-        openai_client,
-        score_evaluation.id,
-        score_run.id,
-        args.poll_seconds,
-    )
-    score_output_items = list(
-        openai_client.evals.runs.output_items.list(
-            score_run.id,
-            eval_id=score_evaluation.id,
-            limit=100,
-            order="asc",
-        )
-    )
+    score_output_items = score_tool_items_locally(score_items)
+    passed = sum(item["score"] == 1.0 for item in score_output_items)
+    analysis = {
+        "items": len(score_output_items),
+        "passed": passed,
+        "failed": len(score_output_items) - passed,
+        "pass_rate": passed / len(score_output_items),
+    }
     result_path = (
         args.results_root
         / selected_environment(args)
-        / score_evaluation.id
-        / f"{score_run.id}.json"
+        / capture_evaluation.id
+        / f"{capture_runs[-1].id}-scored.json"
     )
-    analysis = analyze_output_items(score_output_items)
     save_json(
         result_path,
         {
-            "evaluation": score_evaluation,
-            "run": score_current,
+            "evaluation": capture_evaluation,
             "capture": {
                 "evaluation": capture_evaluation,
-                "run": capture_current,
+                "runs": capture_currents,
                 "output_items": capture_output_items,
             },
             "dataset": {
@@ -2186,10 +2212,8 @@ def run_tool_evaluation(
         selected_environment(args),
         f"tools-{args.tool_name_style}",
         {
-            "evaluationId": score_evaluation.id,
-            "runId": score_run.id,
-            "captureEvaluationId": capture_evaluation.id,
-            "captureRunId": capture_run.id,
+            "evaluationId": capture_evaluation.id,
+            "captureRunIds": [run.id for run in capture_runs],
             "resultFile": str(result_path),
             "agentName": target.agent_name,
             "agentVersion": target.agent_version,
@@ -2197,13 +2221,7 @@ def run_tool_evaluation(
         },
     )
     print(f"Results: {result_path}")
-    if score_current.status != "completed":
-        raise RuntimeError(f"Evaluation ended with status {score_current.status}")
-    if analysis["errored_results"]:
-        raise RuntimeError(
-            f"Evaluation completed with {analysis['errored_results']} evaluator "
-            f"errors; review {result_path}"
-        )
+    print(f"Deterministic tool score: {passed}/{len(score_output_items)}")
 
 
 def prepare_comprehensive_evaluations(

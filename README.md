@@ -1077,9 +1077,11 @@ an MCP approval request. No LLM judge is used for this suite, so the result is
 repeatable and does not depend on a judge model interpreting intermediate
 approval artifacts.
 
-The command creates an agent-target capture run and then a data-only scoring
-run in Foundry. The second run is the authoritative result; both IDs are saved
-to `.foundry/agent-metadata.yaml` with the downloaded score output.
+The command creates agent-target capture runs in Foundry, downloads their
+approval artifacts, and applies the deterministic scorer locally. Foundry's
+code-evaluator sandbox does not expose agent-target approval output reliably,
+so the downloaded scored result is authoritative. Capture run IDs and the
+result file are saved to `.foundry/agent-metadata.yaml`.
 
 Foundry's built-in Tool Call Accuracy, Tool Selection, and Tool Input Accuracy
 evaluators require a final agent response. Approval-gated runs stop at an
