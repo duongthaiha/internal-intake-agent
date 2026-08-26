@@ -4,6 +4,15 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 
+_EXCLUDED_PATH_PREFIXES = {
+    ("platformRecommendation", "assumptions"),
+    ("platformRecommendation", "limitations"),
+    ("platformRecommendation", "rationale"),
+    ("platformRecommendation", "requiredReviews"),
+    ("platformRecommendation", "unansweredQuestions"),
+}
+
+
 def build_search_projection(intake: Mapping[str, Any]) -> tuple[str, str]:
     title = intake.get("title")
     search_title = title.strip() if isinstance(title, str) else ""
@@ -17,6 +26,9 @@ def _append_value(
     path: tuple[str, ...],
     value: Any,
 ) -> None:
+    if any(path[: len(prefix)] == prefix for prefix in _EXCLUDED_PATH_PREFIXES):
+        return
+
     if isinstance(value, Mapping):
         for key in sorted(value):
             _append_value(lines, (*path, str(key)), value[key])

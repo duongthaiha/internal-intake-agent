@@ -44,6 +44,26 @@ class SearchProjectionTests(unittest.TestCase):
         self.assertEqual("", title)
         self.assertEqual("count: 3", text)
 
+    def test_projection_excludes_recommendation_narrative(self) -> None:
+        _, text = build_search_projection(
+            {
+                "title": "Platform assessment",
+                "platformRecommendation": {
+                    "disposition": "build",
+                    "primaryPlatform": "Microsoft Foundry",
+                    "rationale": ["Contains potentially sensitive context."],
+                    "limitations": ["Verify current availability."],
+                },
+            }
+        )
+
+        self.assertIn(
+            "platformRecommendation.primaryPlatform: Microsoft Foundry",
+            text,
+        )
+        self.assertNotIn("sensitive context", text)
+        self.assertNotIn("Verify current availability", text)
+
 
 if __name__ == "__main__":
     unittest.main()

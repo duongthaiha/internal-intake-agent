@@ -12,6 +12,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 from opentelemetry.trace import SpanKind, StatusCode
 
 from agents.hosted.agent import INTAKE_TOOLBOX_TOOLS, build_agent, build_toolbox
+from agents.hosted.platform_recommendation import recommend_ai_platform
 from agents.hosted.identity_diagnostics import (
     IdentityDiagnosticsMiddleware,
     hash_header_value,
@@ -94,6 +95,7 @@ class HostedToolboxTests(unittest.TestCase):
     @patch("agents.hosted.agent.create_harness_agent")
     @patch("agents.hosted.agent.InMemoryHistoryProvider")
     @patch("agents.hosted.agent.FoundryChatClient")
+    @patch("agents.hosted.agent.build_skills_provider")
     @patch("agents.hosted.agent.FoundryToolbox")
     @patch("agents.hosted.agent.build_rag_provider", return_value=("none", None))
     @patch("agents.hosted.agent.DefaultAzureCredential")
@@ -102,6 +104,7 @@ class HostedToolboxTests(unittest.TestCase):
         credential_type: MagicMock,
         _build_rag_provider: MagicMock,
         toolbox_type: MagicMock,
+        build_skills_provider: MagicMock,
         _chat_client_type: MagicMock,
         _history_provider_type: MagicMock,
         create_harness_agent: MagicMock,
@@ -110,6 +113,8 @@ class HostedToolboxTests(unittest.TestCase):
         credential_type.return_value = credential
         toolbox = MagicMock()
         toolbox_type.return_value = toolbox
+        skills_provider = MagicMock()
+        build_skills_provider.return_value = skills_provider
         agent = MagicMock()
         create_harness_agent.return_value = agent
 
@@ -132,7 +137,14 @@ class HostedToolboxTests(unittest.TestCase):
 
         self.assertIs(components.agent, agent)
         self.assertIs(components.toolbox, toolbox)
-        self.assertIs(create_harness_agent.call_args.kwargs["tools"], toolbox)
+        self.assertEqual(
+            create_harness_agent.call_args.kwargs["tools"],
+            [recommend_ai_platform, toolbox],
+        )
+        self.assertIs(
+            create_harness_agent.call_args.kwargs["skills_provider"],
+            skills_provider,
+        )
         self.assertEqual(
             "hosted-agent:42",
             create_harness_agent.call_args.kwargs["id"],
@@ -148,12 +160,14 @@ class HostedToolboxTests(unittest.TestCase):
     @patch("agents.hosted.agent.create_harness_agent")
     @patch("agents.hosted.agent.InMemoryHistoryProvider")
     @patch("agents.hosted.agent.FoundryChatClient")
+    @patch("agents.hosted.agent.build_skills_provider")
     @patch("agents.hosted.agent.build_rag_provider", return_value=("none", None))
     @patch("agents.hosted.agent.DefaultAzureCredential")
     def test_build_agent_enables_identity_diagnostics_explicitly(
         self,
         _credential_type: MagicMock,
         _build_rag_provider: MagicMock,
+        _build_skills_provider: MagicMock,
         _chat_client_type: MagicMock,
         _history_provider_type: MagicMock,
         create_harness_agent: MagicMock,

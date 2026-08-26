@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "1.0.0",
+  "frameworkCommit": "5939bfac7f2f80c5ae773042fb089c5ab01fd893",
+  "sourceUrl": "https://github.com/microsoft/Microsoft-AI-Decision-Framework/blob/5939bfac7f2f80c5ae773042fb089c5ab01fd893/explorer/src/data/complete-decision-flow.ts",
+  "dispositions": [
+    "no_ai",
+    "use_existing",
+    "configure",
+    "extend",
+    "build"
+  ],
+  "platforms": {
+    "deterministic_automation": {
+      "label": "Deterministic automation or conventional software",
+      "limitations": [
+        "Use AI only when language understanding, generation, uncertain reasoning, or adaptive orchestration adds material value."
+      ]
+    },
+    "m365_copilot": {
+      "label": "Microsoft 365 Copilot",
+      "limitations": [
+        "Best suited to Microsoft 365 interaction surfaces and licensed capabilities.",
+        "Custom workflow and application requirements may require Copilot Studio or pro-code extensions."
+      ]
+    },
+    "copilot_studio": {
+      "label": "Microsoft Copilot Studio",
+      "limitations": [
+        "Power Platform governance, connector, environment, and capacity requirements need validation.",
+        "Verify the current status of event-triggered or autonomous capabilities."
+      ]
+    },
+    "m365_agents_sdk": {
+      "label": "Microsoft 365 Agents SDK",
+      "limitations": [
+        "Requires pro-code delivery and lifecycle ownership.",
+        "Best fit when Microsoft 365 and Teams are primary channels."
+      ]
+    },
+    "agent_framework_agui": {
+      "label": "Microsoft Agent Framework with AG-UI",
+      "limitations": [
+        "Requires a custom application experience and pro-code operational ownership.",
+        "Verify current protocol and feature lifecycle status before production use."
+      ]
+    },
+    "microsoft_foundry": {
+      "label": "Microsoft Foundry",
+      "limitations": [
+        "Requires Azure architecture, identity, networking, observability, evaluation, and operational ownership.",
+        "Model, region, quota, and feature availability must be verified."
+      ]
+    },
+    "foundry_agent_service": {
+      "label": "Microsoft Foundry Agent Service",
+      "limitations": [
+        "Hosted and prompt agent constraints differ; select the runtime only after validating required code and tool control.",
+        "Private networking and managed identity requirements must be designed with the workload."
+      ]
+    },
+    "logic_apps": {
+      "label": "Azure Logic Apps agentic workflows",
+      "limitations": [
+        "Use for integration-led workflows rather than treating it as a general-purpose agent SDK.",
+        "Verify current agentic workflow lifecycle status."
+      ]
+    },
+    "foundry_windows": {
+      "label": "Microsoft Foundry on Windows",
+      "limitations": [
+        "Validate device, local model, operating-system, and fleet-management constraints."
+      ]
+    },
+    "microsoft_fabric": {
+      "label": "Microsoft Fabric",
+      "limitations": [
+        "Best fit for analytics-centric data products and governed Fabric estates.",
+        "Validate capacity, workspace governance, and data residency."
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "no-ai",
+      "when": {
+        "ai_need": "not_needed"
+      },
+      "disposition": "no_ai",
+      "platform": "deterministic_automation"
+    },
+    {
+      "id": "existing-m365",
+      "when": {
+        "build_approach": "use_existing",
+        "platform_affinity": "m365"
+      },
+      "disposition": "use_existing",
+      "platform": "m365_copilot"
+    },
+    {
+      "id": "existing-fabric",
+      "when": {
+        "build_approach": "use_existing",
+        "platform_affinity": "fabric"
+      },
+      "disposition": "use_existing",
+      "platform": "microsoft_fabric"
+    },
+    {
+      "id": "conversational-m365",
+      "when": {
+        "interaction_pattern": "conversational",
+        "user_channel": "m365"
+      },
+      "disposition": "use_existing",
+      "platform": "m365_copilot"
+    },
+    {
+      "id": "conversational-low-code",
+      "when": {
+        "interaction_pattern": "conversational",
+        "build_approach": "low_code"
+      },
+      "disposition": "configure",
+      "platform": "copilot_studio"
+    },
+    {
+      "id": "conversational-m365-pro-code",
+      "when": {
+        "interaction_pattern": "conversational",
+        "build_approach": "pro_code",
+        "platform_affinity": "m365"
+      },
+      "disposition": "extend",
+      "platform": "m365_agents_sdk"
+    },
+    {
+      "id": "conversational-custom-ui",
+      "when": {
+        "interaction_pattern": "conversational",
+        "build_approach": "pro_code",
+        "platform_affinity": "azure",
+        "custom_ui_protocol": true
+      },
+      "disposition": "build",
+      "platform": "agent_framework_agui"
+    },
+    {
+      "id": "conversational-foundry",
+      "when": {
+        "interaction_pattern": "conversational",
+        "build_approach": "pro_code",
+        "platform_affinity": "azure"
+      },
+      "disposition": "build",
+      "platform": "microsoft_foundry"
+    },
+    {
+      "id": "autonomous-low-code",
+      "when": {
+        "interaction_pattern": "autonomous",
+        "build_approach": "low_code"
+      },
+      "disposition": "configure",
+      "platform": "copilot_studio"
+    },
+    {
+      "id": "autonomous-integration",
+      "when": {
+        "interaction_pattern": "autonomous",
+        "build_approach": "pro_code",
+        "workflow_type": "enterprise_integration"
+      },
+      "disposition": "build",
+      "platform": "logic_apps"
+    },
+    {
+      "id": "autonomous-foundry",
+      "when": {
+        "interaction_pattern": "autonomous",
+        "build_approach": "pro_code"
+      },
+      "disposition": "build",
+      "platform": "microsoft_foundry"
+    },
+    {
+      "id": "headless-managed",
+      "when": {
+        "interaction_pattern": "api_headless",
+        "hosting_preference": "managed_paas"
+      },
+      "disposition": "build",
+      "platform": "foundry_agent_service"
+    },
+    {
+      "id": "headless-local",
+      "when": {
+        "interaction_pattern": "api_headless",
+        "hosting_preference": "local_edge"
+      },
+      "disposition": "build",
+      "platform": "foundry_windows"
+    },
+    {
+      "id": "headless-self-hosted",
+      "when": {
+        "interaction_pattern": "api_headless",
+        "hosting_preference": "self_hosted"
+      },
+      "disposition": "build",
+      "platform": "microsoft_foundry"
+    }
+  ],
+  "grounding": {
+    "none": "No retrieval layer is required for the stated workload.",
+    "m365": "Use Microsoft Graph-grounded capabilities or Graph connectors where supported.",
+    "documents": "Use Foundry IQ or Azure AI Search with citations and injection-resistant retrieval instructions.",
+    "structured": "Choose a vector-capable data store that fits the existing system of record; do not introduce a new database only for fashion.",
+    "analytics": "Use Microsoft Fabric when governed analytics data and semantic models are central to the workload."
+  },
+  "deploymentTargets": {
+    "m365": "Microsoft 365 Copilot",
+    "teams_custom": "Microsoft Teams",
+    "multi_channel": "Multiple channels through an appropriate SDK or channel adapter",
+    "web_mobile": "Web or mobile application",
+    "azure_service": "Azure managed application hosting",
+    "local_edge": "Managed Windows or edge deployment"
+  }
+}

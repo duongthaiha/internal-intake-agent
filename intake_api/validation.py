@@ -12,7 +12,7 @@ SCHEMA_PATH = (
     / "schemas"
     / "intake-request.schema.json"
 )
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 class IntakeValidationError(ValueError):

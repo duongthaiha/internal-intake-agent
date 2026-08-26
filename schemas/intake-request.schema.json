@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/duongthaiha/internal-intake-agent/schemas/intake-request.schema.json",
-  "$comment": "Schema version 1.0.0",
+  "$comment": "Schema version 1.1.0",
   "title": "Innovation and AI use case intake request",
   "description": "Captures the core idea and optional discovery details for an innovation or AI use case request.",
   "type": "object",
@@ -53,6 +53,9 @@
     },
     "aiConsiderations": {
       "$ref": "#/$defs/aiConsiderations"
+    },
+    "platformRecommendation": {
+      "$ref": "#/$defs/platformRecommendation"
     },
     "dataConsiderations": {
       "$ref": "#/$defs/dataConsiderations"
@@ -336,6 +339,169 @@
         "nonAIAlternative": {
           "type": "string",
           "maxLength": 2000
+        }
+      }
+    },
+    "platformRecommendation": {
+      "type": "object",
+      "description": "A requester-confirmed, advisory Microsoft AI platform recommendation. It is not an approval or final architecture decision.",
+      "additionalProperties": false,
+      "required": [
+        "frameworkCommit",
+        "disposition",
+        "primaryPlatform",
+        "rationale",
+        "confirmedByRequester"
+      ],
+      "properties": {
+        "frameworkCommit": {
+          "type": "string",
+          "description": "Pinned Microsoft AI Decision Framework commit used for the recommendation.",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "no_ai",
+            "use_existing",
+            "configure",
+            "extend",
+            "build"
+          ]
+        },
+        "primaryPlatform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "maxItems": 10,
+          "uniqueItems": true
+        },
+        "rationale": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500
+          },
+          "minItems": 1,
+          "maxItems": 20
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "unansweredQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "classifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "aiNeed": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "interactionPattern": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "riskTier": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "buildApproach": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        },
+        "groundingRecommendation": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "deploymentTarget": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 30,
+          "uniqueItems": true
+        },
+        "requiredReviews": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recommendationCitation"
+          },
+          "maxItems": 20
+        },
+        "confirmedByRequester": {
+          "type": "boolean",
+          "const": true
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "recommendationCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "url"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "section": {
+          "type": "string",
+          "maxLength": 500
         }
       }
     },

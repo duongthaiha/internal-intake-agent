@@ -1,0 +1,27 @@
+{
+  "name": "Microsoft AI Decision Framework curated snapshot",
+  "upstreamRepository": "https://github.com/microsoft/Microsoft-AI-Decision-Framework",
+  "upstreamCommit": "5939bfac7f2f80c5ae773042fb089c5ab01fd893",
+  "retrievedOn": "2026-08-26",
+  "license": "MIT",
+  "licenseFile": "LICENSE",
+  "includedSources": [
+    "CONSTITUTION.md",
+    "docs/capability-model.md",
+    "docs/decision-framework.md",
+    "docs/evaluation-criteria.md",
+    "docs/scenarios.md",
+    "docs/implementation-patterns.md",
+    "explorer/src/data/complete-decision-flow.ts"
+  ],
+  "artifacts": {
+    "decisionGraph": "decision-graph.json",
+    "knowledgeDocument": "../knowledge/microsoft-ai-platform-guidance.md",
+    "hostedSkill": "../../agents/hosted/skills/microsoft-ai-platform-advisor/SKILL.md"
+  },
+  "transformationNotes": [
+    "The decision graph is a reviewed normalization of durable upstream branches, not a byte-for-byte copy.",
+    "Pricing, quota, regional availability, and rapidly changing lifecycle claims are excluded.",
+    "Framework mental models are a community-authored lens and are not represented as official product documentation."
+  ]
+}

@@ -13,6 +13,10 @@ The canonical behavior remains defined in
 and the persisted payload remains defined by
 [`schemas/intake-request.schema.json`](../schemas/intake-request.schema.json).
 
+The Microsoft AI platform-advisor requirements in section 4.5 apply only to the
+hosted implementation. The prompt-agent implementation remains an intake
+assistant without platform-routing behavior.
+
 ## 2. Actors and systems
 
 | Actor or system | Responsibility |
@@ -87,6 +91,20 @@ have read or changed a record.
 | FR-032 | The agent must identify concerns requiring specialist review. | Privacy, security, accessibility, ethics, safety, and responsible-AI concerns are clearly directed to human review and are not represented as approved by the agent. |
 | FR-033 | The agent must resist conflicting instructions in user input, retrieved documents, and tool output. | It neither reveals protected information nor follows embedded instructions that conflict with its governing behavior or access boundaries. |
 
+### Hosted Microsoft AI platform guidance
+
+These requirements apply only to `agents/hosted/`.
+
+| ID | Requirement | Acceptance criteria |
+| --- | --- | --- |
+| FR-040 | The hosted agent must load the repository-bundled Microsoft AI platform-advisor skill when a requester asks whether AI is suitable or which Microsoft platform fits a workload. | The skill is progressively disclosed from the deployed repository package, and its version marker is observable in tests without calling the managed Foundry Skills API. |
+| FR-041 | The hosted agent must assess the outcome and whether AI or an agent is needed before naming a platform. | Deterministic automation, search, an existing capability, and a non-AI outcome remain valid recommendations. |
+| FR-042 | The hosted agent must use the deterministic `recommend_ai_platform` local tool for platform routing. | A recommendation is not produced from free-form prompt reasoning or retrieved text alone, and incomplete or inconsistent profiles produce an actionable validation error. |
+| FR-043 | The hosted agent may use Foundry IQ to explain a recommendation. | Retrieved scenarios, trade-offs, and citations support the deterministic result but cannot change its route or introduce unreviewed products. |
+| FR-044 | The hosted agent must present platform guidance as advisory. | The response includes alternatives, assumptions, limitations, required human reviews, the pinned framework commit, and a reminder to verify current licensing, availability, region, quota, and lifecycle status. |
+| FR-045 | The hosted agent must persist a platform recommendation only after requester confirmation. | The intake payload contains a schema-valid `platformRecommendation` with `confirmedByRequester: true`; unconfirmed recommendation payloads are rejected. |
+| FR-046 | The hosted agent must resist platform-guidance prompt injection. | Instructions embedded in the skill resources, retrieved framework content, user input, or tool output cannot bypass the deterministic route, force a named platform, or weaken human-review requirements. |
+
 ## 5. Record lifecycle
 
 1. **Discover:** collect required information and optional discovery details.
@@ -115,6 +133,14 @@ The intake agent does not:
   responsible-AI review; or
 - provide a key-based or unauthenticated fallback for the intake API.
 
+The hosted platform advisor additionally does not:
+
+- provide a final architecture, procurement, licensing, quota, or product
+  lifecycle decision;
+- use the managed Foundry Skills API or Foundry Memory in the current
+  private-network deployment; or
+- add equivalent platform-advisor behavior to the prompt agent.
+
 ## 7. Traceability
 
 | Requirement area | Repository source |
@@ -124,4 +150,7 @@ The intake agent does not:
 | Record operations and lifecycle | `openapi/intake-api.openapi.json` |
 | Core behavior acceptance cases | `evals/shared/intake_behavior.jsonl` |
 | Tool selection acceptance cases | `evals/shared/intake_tool_calls.jsonl` |
-
+| Hosted platform-advisor skill | `agents/hosted/skills/microsoft-ai-platform-advisor/` |
+| Hosted deterministic recommendation | `agents/hosted/platform_recommendation.py` |
+| Decision Framework snapshot | `data/ai-decision-framework/` |
+| Hosted platform-advisor acceptance cases | `evals/hosted_platform_advisor.jsonl` |

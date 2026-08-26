@@ -417,6 +417,32 @@ class IntakeApiTests(unittest.TestCase):
         )
         self.assertEqual(409, updated.status_code)
 
+    def test_accepts_confirmed_platform_recommendation(self) -> None:
+        response = self.client.post(
+            "/v1/intake-requests",
+            headers=self.auth("owner"),
+            json=self.payload,
+        )
+
+        self.assertEqual(201, response.status_code, response.text)
+        recommendation = response.json()["intake"]["platformRecommendation"]
+        self.assertEqual("Microsoft Foundry", recommendation["primaryPlatform"])
+        self.assertTrue(recommendation["confirmedByRequester"])
+        self.assertEqual("1.1.0", response.json()["schemaVersion"])
+
+    def test_rejects_unconfirmed_platform_recommendation(self) -> None:
+        payload = deepcopy(self.payload)
+        payload["platformRecommendation"]["confirmedByRequester"] = False
+
+        response = self.client.post(
+            "/v1/intake-requests",
+            headers=self.auth("owner"),
+            json=payload,
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("confirmedByRequester", response.json()["detail"])
+
     def test_openapi_contract_is_mcp_ready(self) -> None:
         document = self.client.get("/openapi.json").json()
         operation_ids = {

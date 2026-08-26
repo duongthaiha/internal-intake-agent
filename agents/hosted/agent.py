@@ -12,6 +12,7 @@ from agent_framework import (
     Agent,
     AgentModeProvider,
     InMemoryHistoryProvider,
+    SkillsProvider,
     create_harness_agent,
 )
 from agent_framework.foundry import FoundryChatClient
@@ -24,7 +25,9 @@ from dotenv import load_dotenv
 from agents.hosted.history import ObservableCosmosHistoryProvider
 from agents.hosted.identity_diagnostics import IdentityDiagnosticsMiddleware
 from agents.hosted.logging_config import LOG_LEVEL_NAMES, configure_logging
+from agents.hosted.platform_recommendation import recommend_ai_platform
 from agents.hosted.rag import FoundryIqContextProvider, build_rag_provider
+from agents.hosted.skills import build_skills_provider
 from agents.shared.instructions import load_intake_instructions
 from agents.shared.intake_tools import intake_tool_names
 
@@ -82,6 +85,7 @@ class AgentComponents:
     history_provider_name: str
     rag_provider: object | None
     rag_provider_name: str
+    skills_provider: SkillsProvider
     toolbox: FoundryToolbox | None
 
 
@@ -126,7 +130,11 @@ def build_agent() -> AgentComponents:
     history_provider_name = get_history_provider_name()
     credential = DefaultAzureCredential()
     rag_provider_name, rag_provider = build_rag_provider(credential)
+    skills_provider = build_skills_provider()
     toolbox = build_toolbox(credential, project_endpoint)
+    tools: list[object] = [recommend_ai_platform]
+    if toolbox is not None:
+        tools.append(toolbox)
     identity_diagnostics_enabled = get_boolean_setting(
         "IDENTITY_DIAGNOSTICS_ENABLED",
         False,
@@ -168,9 +176,10 @@ def build_agent() -> AgentComponents:
             "Use tools deliberately and report uncertainty clearly."
         ),
         agent_instructions=load_intake_instructions(),
-        tools=toolbox,
+        tools=tools,
         history_provider=history_provider,
         context_providers=[rag_provider] if rag_provider else None,
+        skills_provider=skills_provider,
         disable_file_memory=True,
         mode_provider=AgentModeProvider(default_mode="execute"),
         default_options={"store": False},
@@ -188,6 +197,7 @@ def build_agent() -> AgentComponents:
         history_provider_name=history_provider_name,
         rag_provider=rag_provider,
         rag_provider_name=rag_provider_name,
+        skills_provider=skills_provider,
         toolbox=toolbox,
     )
 

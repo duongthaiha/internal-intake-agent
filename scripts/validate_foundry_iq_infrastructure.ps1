@@ -102,11 +102,21 @@ $storageIpRules = @(
         if ($_.ipAddressOrRange) { $_.ipAddressOrRange } else { $_.value }
     }
 )
+$storageBypass = @(
+    ([string]$storage.properties.networkAcls.bypass -split ",") |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+$unexpectedStorageBypass = @(
+    $storageBypass |
+        Where-Object { $_ -notin @("AzureServices", "Logging", "Metrics") }
+)
 if (
     $storage.tags.SecurityControl -ne "Ignore" -or
     $storage.properties.publicNetworkAccess -ne "Enabled" -or
     $storage.properties.networkAcls.defaultAction -ne "Deny" -or
-    $storage.properties.networkAcls.bypass -ne "AzureServices" -or
+    "AzureServices" -notin $storageBypass -or
+    $unexpectedStorageBypass.Count -ne 0 -or
     $storageIpRules.Count -ne 1 -or
     $storageIpRules[0] -ne $allowedClientIpCidr -or
     $storage.properties.allowSharedKeyAccess -ne $false -or

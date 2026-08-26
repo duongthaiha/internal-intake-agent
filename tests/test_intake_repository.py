@@ -22,7 +22,7 @@ def record_item() -> dict[str, Any]:
         "tenantId": "tenant-a",
         "createdBy": "owner-a",
         "status": "draft",
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "1.1.0",
         "createdAt": now,
         "updatedAt": now,
         "submittedAt": None,

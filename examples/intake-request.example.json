@@ -69,6 +69,46 @@
     "acceptableFailure": "The assistant may ask an unnecessary clarification question, but it must not invent request details or submit without confirmation.",
     "nonAIAlternative": "Replace the free-text form with a longer conditional web form."
   },
+  "platformRecommendation": {
+    "frameworkCommit": "5939bfac7f2f80c5ae773042fb089c5ab01fd893",
+    "disposition": "build",
+    "primaryPlatform": "Microsoft Foundry",
+    "alternatives": [
+      "Microsoft Copilot Studio",
+      "Deterministic automation or conventional software"
+    ],
+    "rationale": [
+      "The pilot needs context-aware language interaction and grounded generation.",
+      "The stated networking, evaluation, and integration requirements need pro-code Azure control."
+    ],
+    "assumptions": [
+      "Existing Microsoft 365 and low-code capabilities cannot satisfy the private-network and evaluation requirements."
+    ],
+    "classifications": {
+      "aiNeed": "reasoning_or_generation",
+      "interactionPattern": "conversational",
+      "riskTier": "internal_expert",
+      "buildApproach": "pro_code"
+    },
+    "groundingRecommendation": "Use Foundry IQ or Azure AI Search with citations and injection-resistant retrieval instructions.",
+    "deploymentTarget": "Azure managed application hosting",
+    "limitations": [
+      "Model, region, quota, licensing, and feature availability must be verified."
+    ],
+    "requiredReviews": [
+      "Human architecture validation",
+      "Security and privacy review",
+      "Responsible AI review"
+    ],
+    "citations": [
+      {
+        "label": "Microsoft AI Decision Framework complete decision flow",
+        "url": "https://github.com/microsoft/Microsoft-AI-Decision-Framework/blob/5939bfac7f2f80c5ae773042fb089c5ab01fd893/explorer/src/data/complete-decision-flow.ts",
+        "section": "Build approach"
+      }
+    ],
+    "confirmedByRequester": true
+  },
   "dataConsiderations": {
     "sources": [
       {

@@ -393,6 +393,9 @@ class InMemoryRagContextProvider(ContextProvider):
         self.documents_path = documents_path.resolve()
         self.top_k = top_k
         self._chunks = self._load_chunks()
+        self._document_count = len(
+            {chunk.source_link for chunk in self._chunks}
+        )
         self._document_frequency = self._calculate_document_frequency()
 
     def _load_chunks(self) -> list[KnowledgeChunk]:
@@ -428,21 +431,25 @@ class InMemoryRagContextProvider(ContextProvider):
 
     def _calculate_document_frequency(self) -> Counter[str]:
         frequency: Counter[str] = Counter()
+        terms_by_document: dict[str, set[str]] = {}
         for chunk in self._chunks:
-            frequency.update(chunk.term_counts.keys())
+            terms_by_document.setdefault(chunk.source_link, set()).update(
+                chunk.term_counts
+            )
+        for terms in terms_by_document.values():
+            frequency.update(terms)
         return frequency
 
     def _score(self, query_terms: Counter[str], chunk: KnowledgeChunk) -> float:
         score = 0.0
-        document_count = len(self._chunks)
-        for term, query_count in query_terms.items():
-            term_frequency = chunk.term_counts.get(term, 0)
-            if not term_frequency:
+        for term in query_terms:
+            if term not in chunk.term_counts:
                 continue
             inverse_document_frequency = math.log(
-                (document_count + 1) / (self._document_frequency[term] + 1)
+                (self._document_count + 1)
+                / (self._document_frequency[term] + 1)
             ) + 1
-            score += query_count * term_frequency * inverse_document_frequency
+            score += inverse_document_frequency
         return score
 
     def search(self, query: str) -> list[KnowledgeChunk]:

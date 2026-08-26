@@ -19,7 +19,7 @@ Retrieval-augmented generation is configurable:
 ## Agent implementations
 
 The repository keeps the two Foundry implementations separate while sharing
-one intake behavior contract:
+one core intake behavior contract:
 
 ```text
 agents/
@@ -35,6 +35,14 @@ has no RAG provider. Both load
 `agents/shared/instructions/intake_agent.md`; do not duplicate that prompt
 inside either implementation.
 
+The hosted agent also includes a repository-bundled
+`microsoft-ai-platform-advisor` Agent Skill. It progressively loads a curated
+Microsoft AI Decision Framework workflow, calls a deterministic local
+`recommend_ai_platform` tool, and uses the existing Foundry IQ knowledge base
+for supporting scenarios and citations. This hosted-only capability does not
+add a recommendation MCP operation and does not change the prompt agent's tool
+set.
+
 The testable behavior and lifecycle expected from both implementations are
 documented in
 [`docs/intake-agent-functional-requirements.md`](docs/intake-agent-functional-requirements.md).
@@ -42,7 +50,7 @@ documented in
 ## Intake request contract
 
 [`schemas/intake-request.schema.json`](schemas/intake-request.schema.json)
-defines the version 1.0.0 intake contract using JSON Schema Draft 2020-12. A
+defines the version 1.1.0 intake contract using JSON Schema Draft 2020-12. A
 complete fictional submission is available at
 [`examples/intake-request.example.json`](examples/intake-request.example.json).
 
@@ -56,9 +64,51 @@ The schema supports progressive intake. Every record must include:
 
 Business context, users, value measures, AI and data considerations,
 dependencies, delivery, risks, responsible AI, security and privacy, ownership,
-and supporting links can be added as discovery progresses. A request type is
-intentionally not part of the contract. Unknown properties are rejected to
-surface misspelled or unsupported fields.
+supporting links, and a requester-confirmed advisory platform recommendation can
+be added as discovery progresses. A request type is intentionally not part of
+the contract. Unknown properties are rejected to surface misspelled or
+unsupported fields.
+
+## Hosted Microsoft AI platform advisor
+
+The hosted agent's platform-advisor implementation has three distinct layers:
+
+1. `agents/hosted/skills/microsoft-ai-platform-advisor/` contains the
+   progressively disclosed assessment workflow.
+2. `agents/hosted/platform_recommendation.py` owns deterministic routing from a
+   validated workload profile to an advisory disposition, primary platform,
+   alternatives, classifications, limitations, and required reviews.
+3. `data/knowledge/microsoft-ai-platform-guidance.md` supplies grounded scenario
+   evidence through the existing Foundry IQ/Azure AI Search path.
+
+The curated source manifest and normalized decision data are under
+`data/ai-decision-framework/`. The snapshot is pinned to an upstream commit,
+includes the Microsoft MIT license notice, and excludes volatile pricing,
+quota, regional availability, and product lifecycle claims.
+
+Check whether the reviewed snapshot differs from upstream:
+
+```powershell
+python -m scripts.check_ai_decision_framework
+```
+
+An upstream change is a review signal, not an automatic content update. Review
+the source diff, update the normalized graph and curated knowledge, run the
+hosted evaluations, and then merge the snapshot as a normal code change.
+
+The skill is loaded from repository files bundled with the hosted deployment.
+Customers can edit
+`agents/hosted/skills/microsoft-ai-platform-advisor/custom-instruction.md` to
+map compatible baseline recommendations to an approved internal platform. The
+included Contoso University example prefers **Nebula for AI Development on
+Azure** for custom Azure AI builds while preserving the underlying Microsoft
+capability, build-before-buy result, and mandatory risk reviews. Customer
+instructions cannot force AI for an unsuitable workload or override safety and
+governance requirements.
+
+The managed Foundry Skills API and Foundry Memory are preview features and do
+not currently satisfy this deployment's private-network requirements, so the
+agent does not call either service at startup or runtime.
 
 The standalone intake API validates this contract and stores its records
 separately from agent conversation history. The agent does not yet call the API
@@ -1427,6 +1477,55 @@ python -m scripts.evaluate_foundry `
 Disable or delete the schedule through Foundry **Recurring Configs** after
 reviewing the selected schedule ID. The repository intentionally provides no
 automatic deletion path.
+
+### Local AI red-team smoke scans
+
+The local red-team runner tests exact immutable hosted and prompt agent
+versions while attack generation and safety scoring use a separate Foundry
+project in a [supported AI red-teaming region](https://learn.microsoft.com/azure/foundry-classic/concepts/evaluation-regions-limits-virtual-network#supported-regions-for-ai-red-teaming).
+The current UK South project is not supported for AI red teaming.
+
+| Variable | Purpose | Allowed values / default | Required | Sensitive |
+| --- | --- | --- | --- | --- |
+| `RED_TEAM_PROJECT_ENDPOINT` | Supported-region project used for attack generation and safety scoring | Foundry project HTTPS endpoint; no default | Yes | No |
+| `AZURE_ENV_NAME` | azd environment containing the deployed target agents | Existing local azd environment; `.azure/config.json` default | Yes | No |
+| `AGENT_MAF_POC_AGENT_NAME` | Hosted-agent target name | Existing immutable agent name | For hosted scans | No |
+| `AGENT_MAF_POC_AGENT_VERSION` | Hosted-agent target version | Existing immutable version; no default | For hosted scans | No |
+| `PROMPT_AGENT_NAME` | Prompt-agent target name | `prompt-intake-agent` | For prompt scans | No |
+| `PROMPT_AGENT_VERSION` | Prompt-agent target version | Existing immutable version; no default | For prompt scans | No |
+
+Set the supported-region scanner project and both target versions:
+
+```powershell
+$env:RED_TEAM_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+$env:AZURE_ENV_NAME = "maf-poc-byo"
+$env:AGENT_MAF_POC_AGENT_NAME = "maf-poc-agent"
+$env:AGENT_MAF_POC_AGENT_VERSION = "<hosted-version>"
+$env:PROMPT_AGENT_NAME = "prompt-intake-agent"
+$env:PROMPT_AGENT_VERSION = "<prompt-version>"
+```
+
+Run the small smoke profile against both agents:
+
+```powershell
+python -m scripts.red_team_local --target both
+```
+
+Use `--target hosted` or `--target prompt` for one variant. Repeat `--risk` or
+`--attack-strategy` to override the smoke defaults, and increase
+`--num-objectives` only when the additional evaluation cost is intended.
+
+Results are written under
+`.foundry/results/<environment>/red-team-local/<timestamped-scan>/` as JSON
+scorecards containing Attack Success Rate summaries and row-level results. The
+runner disables result upload. Review those ignored files before sharing them
+because they contain generated attacks and responses.
+
+Local red-team JSON cannot be imported as a native run in Foundry (new).
+Microsoft documents the local SDK as incompatible with the new portal. Native
+portal results require cloud red teaming and copies of the target agents in the
+same supported-region project. See [AI red teaming](docs/red-teaming.md) for the
+architecture, limitations, cloud path, and security requirements.
 
 ## Foundry Agent Service configuration
 
