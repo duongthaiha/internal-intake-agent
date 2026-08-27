@@ -46,6 +46,8 @@ set.
 The testable behavior and lifecycle expected from both implementations are
 documented in
 [`docs/intake-agent-functional-requirements.md`](docs/intake-agent-functional-requirements.md).
+The component relationships and shared service boundaries are shown in
+[`docs/agent-architecture.md`](docs/agent-architecture.md).
 
 ## Intake request contract
 
